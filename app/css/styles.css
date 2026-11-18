@@ -242,3 +242,7 @@ svg.mini { width: 100%; height: auto; display: block; }
 .cal-list b { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .cal-day-h { margin: 0; font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; }
 .payee { font-size: .84rem; color: var(--fg); opacity: .8; overflow-wrap: anywhere; }
+.danger-zone h3 { color: var(--late); }
+.clear-options { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.radio { flex-direction: row; align-items: flex-start; gap: 8px; font-weight: 600; color: var(--fg); font-size: .9rem; }
+.radio input { width: auto; min-height: 0; margin-top: 3px; accent-color: var(--late); }

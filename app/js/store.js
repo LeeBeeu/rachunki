@@ -66,6 +66,14 @@ function createLocalStore() {
     },
     async addBill(bill) { data.bills[id()] = { ...bill, createdAt: new Date().toISOString(), createdBy: me.name }; save(); },
     async updateBill(billId, bill) { data.bills[billId] = { ...data.bills[billId], ...bill }; save(); },
+    /** Usuwa wszystkie zapłaty, a z withBills = true także wszystkie płatności. Zwraca liczbę usuniętych wpisów. */
+    async clearData(withBills) {
+      const n = Object.keys(data.payments).length + (withBills ? Object.keys(data.bills).length : 0);
+      data.payments = {};
+      if (withBills) data.bills = {};
+      save();
+      return n;
+    },
     async deleteBill(billId) {
       delete data.bills[billId];
       for (const [pid, p] of Object.entries(data.payments)) if (p.billId === billId) delete data.payments[pid];
@@ -195,6 +203,17 @@ async function createCloudStore() {
     },
     async addBill(bill) { await fs.addDoc(col('bills'), { ...bill, createdAt: fs.serverTimestamp(), createdBy: user.name }); },
     async updateBill(billId, bill) { await fs.updateDoc(fs.doc(col('bills'), billId), bill); },
+    async clearData(withBills) {
+      const refs = (await fs.getDocs(col('payments'))).docs.map((d) => d.ref);
+      if (withBills) refs.push(...(await fs.getDocs(col('bills'))).docs.map((d) => d.ref));
+      // Firestore przyjmuje do 500 operacji w jednej paczce.
+      for (let i = 0; i < refs.length; i += 400) {
+        const batch = fs.writeBatch(db);
+        refs.slice(i, i + 400).forEach((r) => batch.delete(r));
+        await batch.commit();
+      }
+      return refs.length;
+    },
     async deleteBill(billId) {
       const paid = await fs.getDocs(fs.query(col('payments'), fs.where('billId', '==', billId)));
       const batch = fs.writeBatch(db);

@@ -197,6 +197,20 @@
         <ul class="all-bills" id="allBills"></ul>
       </section>
 
+      <section class="block danger-zone">
+        <h3>Usuwanie danych</h3>
+        <p class="hint">Np. po wpisaniu danych na próbę. Rodzina, dzieci i konto zostają. Usuwa dane dla wszystkich domowników i nie da się tego cofnąć.</p>
+        <div class="clear-options" role="radiogroup" aria-label="Co usunąć">
+          <label class="radio"><input type="radio" name="clearWhat" value="payments" checked> Tylko historię zapłat <span class="opt">(odhaczenia; płatności zostają)</span></label>
+          <label class="radio"><input type="radio" name="clearWhat" value="all"> Wszystko <span class="opt">(wszystkie płatności i zapłaty)</span></label>
+        </div>
+        <form id="clearForm" class="inline">
+          <input id="clearConfirm" autocomplete="off" placeholder="Wpisz USUŃ" aria-label="Wpisz USUŃ, aby potwierdzić">
+          <button class="danger" type="submit" id="clearBtn">Usuń</button>
+        </form>
+        <p class="err" id="clearErr" role="alert" hidden></p>
+      </section>
+
       <section class="block">
         <h3>Konto</h3>
         <p class="hint" id="accountInfo"></p>

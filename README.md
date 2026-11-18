@@ -32,6 +32,9 @@ Projekt jest samodzielny i nie zależy od ClimbPhone. Najprościej trzymać go w
 
 Adres będzie wtedy taki: **https://leebeeu.github.io/rachunki/**
 
+**Usuwanie danych testowych:** ☰ → **Usuwanie danych**. Do wyboru: tylko historia zapłat (odhaczenia)
+albo wszystko (płatności i zapłaty). Rodzina, dzieci i konto zostają. Trzeba wpisać słowo USUŃ – operacji nie da się cofnąć.
+
 ## Tryby działania
 
 | Tryb | Kiedy | Dane |

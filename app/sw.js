@@ -2,7 +2,7 @@
 // Własne pliki: "najpierw sieć" (po publikacji wystarczy odświeżyć), cache to zapas.
 // Biblioteki Firebase (gstatic.com, wersja w adresie się nie zmienia): "najpierw cache".
 // Przy każdej publikacji podbij VERSION – telefon pokaże pasek „Jest nowa wersja”.
-const VERSION = 'v7';
+const VERSION = 'v8';
 const CACHE = `rachunki-${VERSION}`;
 const ASSETS = [
   './',

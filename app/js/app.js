@@ -722,6 +722,31 @@ function bindEvents() {
   $('menuBtn').onclick = () => { renderMenu(); $('memberErr').hidden = true; $('menuSheet').hidden = false; };
   $('billForm').addEventListener('submit', saveBill);
   $('kindRecurring').onclick = () => setFormKind('recurring');
+  $('clearForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const err = $('clearErr');
+    const typed = $('clearConfirm').value.trim().toUpperCase();
+    if (typed !== 'USUŃ' && typed !== 'USUN') {
+      err.textContent = 'Aby potwierdzić, wpisz słowo USUŃ.';
+      err.hidden = false;
+      return;
+    }
+    const all = document.querySelector('input[name="clearWhat"]:checked').value === 'all';
+    $('clearBtn').disabled = true;
+    try {
+      const n = await state.store.clearData(all);
+      $('clearConfirm').value = '';
+      err.hidden = true;
+      $('menuSheet').hidden = true;
+      const word = n === 1 ? 'wpis' : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? 'wpisy' : 'wpisów';
+      toast(all ? `Usunięto wszystkie płatności i zapłaty (${n} ${word}).` : `Usunięto historię zapłat (${n} ${word}).`);
+    } catch (x) {
+      console.error(x);
+      err.textContent = 'Nie udało się usunąć. Sprawdź połączenie i spróbuj ponownie.';
+      err.hidden = false;
+    }
+    $('clearBtn').disabled = false;
+  });
   $('childForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = $('childName').value.trim().slice(0, 40);
