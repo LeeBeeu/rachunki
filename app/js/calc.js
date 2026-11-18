@@ -298,3 +298,45 @@ export function billHistory(bill, payments) {
     max: amounts.length ? Math.max(...amounts) : 0,
   };
 }
+
+/* ---------- Kalendarz ---------- */
+
+/** Siatka miesiąca od poniedziałku: tygodnie po 7 dat, z dniami sąsiednich miesięcy. */
+export function calendarWeeks(y, m) {
+  const first = new Date(y, m, 1);
+  const offset = (first.getDay() + 6) % 7; // pon = 0
+  const start = new Date(y, m, 1 - offset);
+  const last = new Date(y, m + 1, 0);
+  const weeks = [];
+  for (let d = new Date(start); d <= last || weeks.length === 0 || weeks[weeks.length - 1].length < 7;) {
+    if (!weeks.length || weeks[weeks.length - 1].length === 7) {
+      if (d > last) break;
+      weeks.push([]);
+    }
+    weeks[weeks.length - 1].push(new Date(d));
+    d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+  }
+  return weeks;
+}
+
+/**
+ * Zdarzenia dnia w miesiącu: terminy (pozycje z monthItems) i zapłaty wykonane tego dnia
+ * (dowolnego okresu, np. zaległa z poprzedniego miesiąca zapłacona dziś).
+ * Zwraca Map 'RRRR-MM-DD' → { due: [...items], paid: [{ bill, payment }] }.
+ */
+export function calendarEvents(items, payments, bills) {
+  const out = new Map();
+  const at = (key) => {
+    if (!out.has(key)) out.set(key, { due: [], paid: [] });
+    return out.get(key);
+  };
+  for (const i of items) at(isoDate(i.due)).due.push(i);
+  const byId = new Map(bills.map((b) => [b.id, b]));
+  for (const p of payments) {
+    if (!p.paidAt) continue;
+    const bill = byId.get(p.billId);
+    if (!bill) continue;
+    at(isoDate(new Date(p.paidAt))).paid.push({ bill, payment: p });
+  }
+  return out;
+}

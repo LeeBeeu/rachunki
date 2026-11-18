@@ -14,6 +14,9 @@ stałych płatności: woda, prąd, czynsz, przedszkole, ubezpieczenia.
   kto faktycznie zapłacił. Filtr **Moje do zapłaty** pokazuje tylko Twoje pozycje.
 - **Dotyczy**: konkretne dziecko albo cała rodzina (lista dzieci w ☰ → Dzieci).
 - **Forma płatności**: przelew albo gotówka – domyślna przy płatności, faktyczna przy zapłacie.
+- **Kalendarz**: miesiąc w kratkach. Kolorowe kropki to terminy (zielona – zapłacone, czerwona – po terminie,
+  żółta – termin w ciągu 3 dni, pusta – do zapłaty), ✓ to dzień, w którym coś zapłacono.
+  Stuknięcie dnia pokazuje jego płatności; stuknięcie płatności pozwala ją zapłacić.
 - **Historia**: wykres zapłat z 12 miesięcy, podział na kategorie, kto ile zapłacił, na kogo
   (dzieci / cała rodzina) i historia każdej płatności (np. jak zmieniał się prąd).
 - Wszyscy domownicy widzą te same dane na żywo. Lista działa też bez internetu, a zmiany wysyłają się po odzyskaniu sieci.

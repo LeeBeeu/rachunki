@@ -3,7 +3,7 @@ import {
   EVERY, CATEGORIES, periodKey, currentPeriod, shiftMonth, monthItems, summary, overdueBefore,
   validateBill, formatPLN, isEmail, normalizeEmail, parseAmount, paidAmount, isoDate, oneOffFromDate, dueDate,
   periodsBack, historyByMonth, categoryTotals, billHistory,
-  METHODS, methodLabel, nameKey, displayName, isMine, totalsBy,
+  METHODS, methodLabel, nameKey, displayName, isMine, totalsBy, calendarWeeks, calendarEvents,
 } from './calc.js';
 import { createStore } from './store.js';
 
@@ -34,6 +34,7 @@ const state = {
   historyPick: null,
   openBillId: null,
   mineOnly: false,
+  calDay: null,
   nameSaved: false,
 };
 
@@ -250,7 +251,7 @@ function startBoard() {
   $('gate').hidden = true;
   $('views').hidden = false;
   $('menuBtn').hidden = false;
-  setView(location.hash === '#historia' ? 'history' : 'board');
+  setView(viewFromHash());
   const s = state.store;
   const onError = (e) => {
     console.error(e);
@@ -306,6 +307,7 @@ function stopWatching() {
 }
 
 function render() {
+  if (!$('calendar').hidden) renderCalendar();
   if ($('board').hidden) return;
   const p = period();
   $('monthLabel').textContent = new Date(state.cur.y, state.cur.m, 1).toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' });
@@ -730,9 +732,13 @@ function bindEvents() {
   $('kindOnce').onclick = () => setFormKind('once');
   $('payForm').addEventListener('submit', savePayment);
   $('unpayBtn').onclick = unpay;
-  $('tabBoard').onclick = () => { if (location.hash) history.back(); else setView('board'); };
-  $('tabHistory').onclick = () => { if (state.view !== 'history') location.hash = 'historia'; };
-  window.addEventListener('hashchange', () => { if (!$('views').hidden) setView(location.hash === '#historia' ? 'history' : 'board'); });
+  $('tabBoard').onclick = () => goView('board');
+  $('tabCalendar').onclick = () => goView('calendar');
+  $('tabHistory').onclick = () => goView('history');
+  window.addEventListener('hashchange', () => { if (!$('views').hidden) setView(viewFromHash()); });
+  $('calPrev').onclick = () => { state.calDay = null; changeMonth(-1); };
+  $('calNext').onclick = () => { state.calDay = null; changeMonth(1); };
+  $('calLabel').onclick = () => { state.calDay = null; state.cur = { y: now().getFullYear(), m: now().getMonth() }; watchPayments(); render(); };
   let resizeTimer;
   window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(renderHistory, 150); });
   $('delBtn').onclick = deleteBill;
@@ -792,22 +798,38 @@ init();
 
 /* ---------- Widok: Miesiąc / Historia ---------- */
 
+const VIEW_HASH = { board: '', calendar: '#kalendarz', history: '#historia' };
+const viewFromHash = () => (location.hash === '#historia' ? 'history' : location.hash === '#kalendarz' ? 'calendar' : 'board');
+
+/** Przełączanie zakładek tak, żeby przycisk „wstecz” telefonu wracał do widoku Miesiąc. */
+function goView(view) {
+  if (view === state.view) return;
+  if (view === 'board') {
+    if (location.hash) history.back(); else setView('board');
+  } else if (state.view === 'board') {
+    location.hash = VIEW_HASH[view].slice(1);
+  } else {
+    location.replace(VIEW_HASH[view]);
+  }
+}
+
 function setView(view) {
   state.view = view;
-  const hist = view === 'history';
-  $('board').hidden = hist;
-  $('history').hidden = !hist;
-  $('addBtn').hidden = hist;
-  $('tabBoard').setAttribute('aria-selected', String(!hist));
-  $('tabHistory').setAttribute('aria-selected', String(hist));
-  if (hist && !state.unsubHistory) {
+  $('board').hidden = view !== 'board';
+  $('calendar').hidden = view !== 'calendar';
+  $('history').hidden = view !== 'history';
+  $('addBtn').hidden = view === 'history';
+  $('tabBoard').setAttribute('aria-selected', String(view === 'board'));
+  $('tabCalendar').setAttribute('aria-selected', String(view === 'calendar'));
+  $('tabHistory').setAttribute('aria-selected', String(view === 'history'));
+  if (view === 'history' && !state.unsubHistory) {
     const periods = historyPeriods();
     state.unsubHistory = state.store.watchPayments(periods[0], periods[periods.length - 1], (map) => {
       state.historyPayments = Object.values(map);
       renderHistory();
     }, (e) => console.error(e));
   }
-  if (hist) renderHistory(); else render();
+  if (view === 'history') renderHistory(); else render();
   window.scrollTo(0, 0);
 }
 
@@ -999,5 +1021,90 @@ function barList(box, rows) {
       el('div', { className: 'cat-head' }, el('span', { textContent: r.label }),
         el('b', { textContent: formatPLN(r.total) }), el('small', { textContent: `${Math.round(r.share * 100)}%` })),
       track));
+  }
+}
+
+/* ---------- Kalendarz ---------- */
+
+const WEEKDAYS = ['pn', 'wt', 'śr', 'cz', 'pt', 'so', 'nd'];
+const STATUS_TEXT = { paid: 'zapłacone', late: 'po terminie', soon: 'termin wkrótce', todo: 'do zapłaty' };
+
+function renderCalendar() {
+  const p = period();
+  $('calLabel').textContent = new Date(state.cur.y, state.cur.m, 1).toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' });
+  const forMonth = {};
+  for (const pay of Object.values(state.payments)) if (pay.period === p) forMonth[pay.billId] = pay;
+  const items = monthItems(state.bills, forMonth, p, now());
+  const events = calendarEvents(items, Object.values(state.payments), state.bills);
+  const todayKey = isoDate(now());
+  if (!state.calDay || state.calDay.slice(0, 7) !== p) {
+    state.calDay = todayKey.slice(0, 7) === p ? todayKey
+      : [...events.keys()].filter((k) => k.slice(0, 7) === p).sort()[0] || `${p}-01`;
+  }
+
+  const grid = $('calGrid');
+  grid.textContent = '';
+  grid.append(...WEEKDAYS.map((d) => el('div', { className: 'wd', textContent: d, ariaHidden: 'true' })));
+  for (const week of calendarWeeks(state.cur.y, state.cur.m)) {
+    for (const date of week) {
+      const key = isoDate(date);
+      const inMonth = date.getMonth() === state.cur.m;
+      if (!inMonth) { grid.append(el('div', { className: 'day out' }, el('span', { className: 'num', textContent: date.getDate() }))); continue; }
+      const ev = events.get(key) || { due: [], paid: [] };
+      const cls = ['day'];
+      if (key === todayKey) cls.push('today');
+      if (key === state.calDay) cls.push('sel');
+      if (ev.due.some((i) => i.status === 'late')) cls.push('has-late');
+      const dots = el('span', { className: 'dots' }, ...ev.due.slice(0, 4).map((i) => el('i', { className: `dot ${i.status}` })));
+      const label = [date.toLocaleDateString('pl-PL', { day: 'numeric', month: 'long' }),
+        ev.due.length ? `terminy: ${ev.due.map((i) => `${i.bill.name} (${STATUS_TEXT[i.status]})`).join(', ')}` : '',
+        ev.paid.length ? `zapłacono: ${ev.paid.map((x) => x.bill.name).join(', ')}` : ''].filter(Boolean).join('; ');
+      const cell = el('button', { type: 'button', className: cls.join(' '), ariaLabel: label },
+        el('span', { className: 'num', textContent: date.getDate() }), dots,
+        ev.due.length > 4 ? el('span', { className: 'more', textContent: `+${ev.due.length - 4}` }) : null,
+        ev.paid.length ? el('i', { className: 'paid-mark', textContent: '✓', ariaHidden: 'true' }) : null);
+      cell.setAttribute('aria-pressed', String(key === state.calDay));
+      cell.onclick = () => { state.calDay = key; renderCalendar(); };
+      grid.append(cell);
+    }
+  }
+  renderCalDay(events.get(state.calDay) || { due: [], paid: [] }, p);
+}
+
+function renderCalDay(ev, p) {
+  const box = $('calDay');
+  box.textContent = '';
+  const [y, m, d] = state.calDay.split('-').map(Number);
+  box.append(el('h2', { textContent: new Date(y, m - 1, d).toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' }) }));
+  if (!ev.due.length && !ev.paid.length) {
+    box.append(el('p', { className: 'hint', textContent: 'Tego dnia nie ma terminów ani zapłat.' }));
+    return;
+  }
+  if (ev.due.length) {
+    box.append(el('p', { className: 'cal-day-h', textContent: 'Termin płatności' }));
+    box.append(el('ul', { className: 'cal-list' }, ...ev.due.map((i) => {
+      const amount = i.payment ? paidAmount(i.payment, i.bill) : Number(i.bill.amount) || 0;
+      const sub = i.payment
+        ? `zapłacone ${new Date(i.payment.paidAt).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' })}${i.payment.payerEmail ? ` · ${nameOf(i.payment.payerEmail)}` : ''}`
+        : [STATUS_TEXT[i.status], i.bill.payer && isCloud() ? `płaci ${nameOf(i.bill.payer)}` : '', i.bill.forWhom, i.bill.method === 'gotowka' ? 'gotówka' : '']
+          .filter(Boolean).join(' · ');
+      const li = el('li', {}, el('i', { className: `dot ${i.status}` }),
+        el('span', {}, i.bill.name, el('small', { textContent: sub })),
+        el('b', { textContent: amount ? formatPLN(amount) : 'zmienna' }));
+      li.onclick = () => openPaySheet(i.bill, p, i.payment);
+      li.style.cursor = 'pointer';
+      return li;
+    })));
+  }
+  if (ev.paid.length) {
+    box.append(el('p', { className: 'cal-day-h', textContent: 'Zapłacono tego dnia' }));
+    box.append(el('ul', { className: 'cal-list' }, ...ev.paid.map(({ bill, payment }) => el('li', {},
+      el('i', { className: 'paid-mark', textContent: '✓' }),
+      el('span', {}, bill.name, el('small', { textContent: [
+        payment.period !== p ? `za ${monthLong(payment.period)}` : '',
+        payment.payerEmail ? nameOf(payment.payerEmail) : firstName(payment.paidByName || ''),
+        payment.method === 'gotowka' ? 'gotówką' : '',
+      ].filter(Boolean).join(' · ') })),
+      el('b', { textContent: formatPLN(paidAmount(payment, bill)) })))));
   }
 }

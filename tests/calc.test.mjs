@@ -187,3 +187,33 @@ test('sumy: kto zapłacił i na kogo', () => {
   assert.deepEqual(totalsBy(bills, pays, ps, (b, p) => p.payerEmail).map((x) => [x.key, x.total]),
     [['leszek@gmail.com', 920], ['ania@wp.pl', 100]]);
 });
+
+import { calendarWeeks, calendarEvents, monthItems as mi } from '../app/js/calc.js';
+
+test('kalendarz: tygodnie od poniedziałku', () => {
+  const w = calendarWeeks(2026, 10); // listopad 2026: 1.11 to niedziela
+  assert.equal(w.length, 6);
+  assert.equal(isoDate(w[0][0]), '2026-10-26');
+  assert.equal(isoDate(w[0][6]), '2026-11-01');
+  assert.equal(isoDate(w[5][6]), '2026-12-06');
+  assert.ok(w.every((week) => week.length === 7));
+  const feb = calendarWeeks(2027, 1); // luty 2027: 1.02 to poniedziałek, 28 dni
+  assert.equal(feb.length, 4);
+  assert.equal(isoDate(feb[0][0]), '2027-02-01');
+});
+
+test('kalendarz: terminy i zapłaty w dniach', () => {
+  const bills = [
+    { id: 'w', name: 'Woda', amount: 100, day: 10, every: 1, start: '2026-01' },
+    { id: 'p', name: 'Prąd', amount: 200, day: 20, every: 1, start: '2026-01' },
+  ];
+  const pays = [
+    { billId: 'w', period: '2026-11', paidAt: new Date(2026, 10, 8, 12).toISOString() },
+    { billId: 'p', period: '2026-10', paidAt: new Date(2026, 10, 8, 18).toISOString() },
+  ];
+  const items = mi(bills, { w: pays[0] }, '2026-11', new Date(2026, 10, 18));
+  const ev = calendarEvents(items, pays, bills);
+  assert.deepEqual(ev.get('2026-11-10').due.map((i) => [i.bill.id, i.status]), [['w', 'paid']]);
+  assert.deepEqual(ev.get('2026-11-20').due.map((i) => [i.bill.id, i.status]), [['p', 'soon']]);
+  assert.deepEqual(ev.get('2026-11-08').paid.map((x) => x.bill.id), ['w', 'p']);
+});

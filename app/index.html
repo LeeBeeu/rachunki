@@ -24,8 +24,27 @@
 
     <nav class="views" id="views" role="tablist" aria-label="Widok" hidden>
       <button type="button" id="tabBoard" role="tab" aria-selected="true">Miesiąc</button>
+      <button type="button" id="tabCalendar" role="tab" aria-selected="false">Kalendarz</button>
       <button type="button" id="tabHistory" role="tab" aria-selected="false">Historia</button>
     </nav>
+
+    <!-- Kalendarz płatności -->
+    <section id="calendar" hidden>
+      <div class="month">
+        <button class="icon-btn" id="calPrev" aria-label="Poprzedni miesiąc">‹</button>
+        <button class="month-label" id="calLabel" aria-label="Wróć do bieżącego miesiąca"></button>
+        <button class="icon-btn" id="calNext" aria-label="Następny miesiąc">›</button>
+      </div>
+      <div class="cal" id="calGrid" role="grid" aria-label="Kalendarz płatności"></div>
+      <ul class="cal-legend" aria-label="Legenda">
+        <li><i class="dot paid"></i>zapłacone</li>
+        <li><i class="dot late"></i>po terminie</li>
+        <li><i class="dot soon"></i>termin wkrótce</li>
+        <li><i class="dot todo"></i>do zapłaty</li>
+        <li><i class="paid-mark">✓</i>dzień zapłaty</li>
+      </ul>
+      <section class="chart-card" id="calDay"></section>
+    </section>
 
     <!-- Historia i wykresy -->
     <section id="history" hidden>
