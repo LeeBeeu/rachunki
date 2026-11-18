@@ -184,6 +184,7 @@ export function validateBill(input) {
       end,
       category: CATEGORIES.includes(input.category) ? input.category : 'Inne',
       note: String(input.note ?? '').trim().slice(0, 200),
+      payee: String(input.payee ?? '').trim().slice(0, 80),
       payer: normalizeEmail(input.payer).slice(0, 120),
       forWhom: String(input.forWhom ?? '').trim().slice(0, 40),
       method: METHODS.some((m) => m.value === input.method) ? input.method : 'przelew',

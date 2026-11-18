@@ -375,6 +375,7 @@ function billRow(item, p) {
   }
   const info = el('div', { className: 'info', role: 'button', tabIndex: 0, ariaLabel: `Edytuj: ${bill.name}` },
     el('div', { className: 'name', textContent: bill.name }),
+    bill.payee ? el('div', { className: 'payee', textContent: bill.payee }) : null,
     el('div', { className: 'meta' }, pill,
       !payment && bill.payer && isCloud() ? el('span', { className: 'chip who', textContent: `płaci ${nameOf(bill.payer)}` }) : null,
       bill.forWhom ? el('span', { className: 'chip', textContent: bill.forWhom }) : null,
@@ -435,7 +436,8 @@ function openPaySheet(bill, p, payment) {
   state.paying = { bill, period: p, payment };
   const monthName = new Date(Number(p.slice(0, 4)), Number(p.slice(5)) - 1, 1).toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' });
   $('payTitle').textContent = `${bill.name} · ${monthName}`;
-  $('payPlan').textContent = Number(bill.amount) ? `Planowana kwota: ${formatPLN(bill.amount)}` : 'Kwota zmienna: wpisz, ile zapłacono.';
+  $('payPlan').textContent = [bill.payee ? `Odbiorca: ${bill.payee}` : '',
+    Number(bill.amount) ? `Planowana kwota: ${formatPLN(bill.amount)}` : 'Kwota zmienna: wpisz, ile zapłacono.'].filter(Boolean).join(' · ');
   const amount = payment ? paidAmount(payment, bill) : Number(bill.amount) || 0;
   $('pAmount').value = amount ? String(amount).replace('.', ',') : '';
   $('pDate').value = isoDate(payment?.paidAt ? new Date(payment.paidAt) : new Date());
@@ -542,6 +544,10 @@ function openBillForm(bill) {
     ? `${bill.start}-${String(bill.day).padStart(2, '0')}`
     : isoDate(dueDate({ day: now().getDate() }, period()));
   $('fName').value = bill?.name ?? '';
+  $('fPayee').value = bill?.payee ?? '';
+  // Podpowiedzi: odbiorcy wpisani już przy innych płatnościach.
+  const payees = [...new Set(state.bills.map((b) => b.payee).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pl'));
+  $('payeeList').replaceChildren(...payees.map((v) => el('option', { value: v })));
   $('fAmount').value = bill?.amount ? String(bill.amount).replace('.', ',') : '';
   $('fDay').value = bill?.day ?? 10;
   $('fEvery').value = String(bill && !once ? bill.every : 1);
@@ -577,6 +583,7 @@ async function saveBill(e) {
   }
   const { bill, error } = validateBill({
     name: $('fName').value, amount: $('fAmount').value, category: $('fCat').value, note: $('fNote').value, ...when,
+    payee: $('fPayee').value,
     payer: isCloud() ? $('fPayer').value : '', forWhom: $('fFor').value, method: $('fMethod').value,
   });
   if (error) return formError(error);
@@ -674,7 +681,7 @@ function renderMenu() {
     const edit = el('button', { textContent: 'Edytuj' });
     edit.onclick = () => openBillForm(b);
     $('allBills').append(el('li', {}, el('span', {},
-      b.name, el('small', { textContent: Number(b.every) === 0
+      b.name, b.payee ? el('small', { textContent: b.payee }) : null, el('small', { textContent: Number(b.every) === 0
         ? `${formatPLN(b.amount)} · jednorazowo, ${b.day}.${b.start.slice(5)}.${b.start.slice(0, 4)}`
         : `${b.amount ? formatPLN(b.amount) : 'kwota zmienna'} · ${b.day}. dnia · ${every}${b.end ? ` · do ${b.end}` : ''}` })), edit));
   }
@@ -1089,7 +1096,7 @@ function renderCalDay(ev, p) {
         : [STATUS_TEXT[i.status], i.bill.payer && isCloud() ? `płaci ${nameOf(i.bill.payer)}` : '', i.bill.forWhom, i.bill.method === 'gotowka' ? 'gotówka' : '']
           .filter(Boolean).join(' · ');
       const li = el('li', {}, el('i', { className: `dot ${i.status}` }),
-        el('span', {}, i.bill.name, el('small', { textContent: sub })),
+        el('span', {}, i.bill.name, el('small', { textContent: i.bill.payee ? `${i.bill.payee} · ${sub}` : sub })),
         el('b', { textContent: amount ? formatPLN(amount) : 'zmienna' }));
       li.onclick = () => openPaySheet(i.bill, p, i.payment);
       li.style.cursor = 'pointer';

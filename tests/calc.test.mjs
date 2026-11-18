@@ -92,8 +92,9 @@ test('walidacja formularza', () => {
   const ok = validateBill({ name: ' Woda ', amount: '99,9', start: '2026-01', day: '10', every: '2', category: 'Media' });
   assert.deepEqual(ok.bill, {
     name: 'Woda', amount: 99.9, day: 10, every: 2, start: '2026-01', end: '', category: 'Media', note: '',
-    payer: '', forWhom: '', method: 'przelew',
+    payee: '', payer: '', forWhom: '', method: 'przelew',
   });
+  assert.equal(validateBill({ name: 'Woda', start: '2026-01', day: 1, every: 1, payee: '  Wodociągi Miejskie  ' }).bill.payee, 'Wodociągi Miejskie');
   const full = validateBill({ name: 'Basen', start: '2026-01', day: 5, every: 1, payer: ' Ania@WP.pl ', forWhom: ' Zosia ', method: 'gotowka' });
   assert.deepEqual([full.bill.payer, full.bill.forWhom, full.bill.method], ['ania@wp.pl', 'Zosia', 'gotowka']);
   assert.equal(validateBill({ name: 'X', start: '2026-01', day: 5, every: 1, method: 'karta' }).bill.method, 'przelew');

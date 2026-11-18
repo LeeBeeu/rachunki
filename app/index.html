@@ -110,7 +110,9 @@
         <button type="button" id="kindRecurring" role="tab">Stała płatność</button>
         <button type="button" id="kindOnce" role="tab">Jednorazowy wydatek</button>
       </div>
-      <label>Nazwa<input id="fName" maxlength="60" placeholder="np. Woda – wodociągi" autocomplete="off"></label>
+      <label>Nazwa<input id="fName" maxlength="60" placeholder="np. Woda" autocomplete="off"></label>
+      <label>Odbiorca <span class="opt">(firma lub osoba, której płacisz)</span><input id="fPayee" maxlength="80" list="payeeList" placeholder="np. Wodociągi Miejskie, pani Kasia (sprzątanie)" autocomplete="off"></label>
+      <datalist id="payeeList"></datalist>
       <div class="row">
         <label>Kwota (zł) <span class="opt" id="fAmountHint">(puste = zmienna)</span><input id="fAmount" inputmode="decimal" placeholder="np. 120,50" autocomplete="off"></label>
         <label class="recurring">Dzień płatności<input id="fDay" type="number" min="1" max="31" inputmode="numeric"></label>

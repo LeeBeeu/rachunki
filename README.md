@@ -10,6 +10,7 @@ stałych płatności: woda, prąd, czynsz, przedszkole, ubezpieczenia.
 - Stuknięcie kwoty pozwala wpisać, ile faktycznie zapłacono i kiedy (np. prąd wyszedł drożej niż zwykle).
   Płatność bez kwoty (np. prąd, gaz) ma kwotę zmienną: przy odhaczaniu aplikacja pyta, ile zapłacono.
 - **Jednorazowe wydatki** (naprawa, prezent, większe zakupy): przycisk **+ Dodaj → Jednorazowy wydatek**, z datą.
+- **Odbiorca**: komu płacisz – firma albo osoba (np. Wodociągi Miejskie, pani Kasia). Pole podpowiada wpisanych już odbiorców.
 - **Kto płaci**: płatność można przypisać do konkretnej osoby (albo „Ktokolwiek”). Przy zapłacie zapisuje się,
   kto faktycznie zapłacił. Filtr **Moje do zapłaty** pokazuje tylko Twoje pozycje.
 - **Dotyczy**: konkretne dziecko albo cała rodzina (lista dzieci w ☰ → Dzieci).
