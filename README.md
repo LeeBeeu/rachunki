@@ -33,8 +33,10 @@ wystarcza dla rodziny i nie wymaga podawania karty.
 
 1. Wejdź na https://console.firebase.google.com i kliknij **Utwórz projekt**, np. `nasze-rachunki`.
    Google Analytics możesz wyłączyć.
-2. **Logowanie**: menu **Build → Authentication → Get started → Sign-in method → Google** → włącz,
-   wybierz swój e-mail pomocy i zapisz.
+2. **Logowanie**: menu **Build → Authentication → Get started → Sign-in method**:
+   - **Google** → włącz, wybierz swój e-mail pomocy i zapisz,
+   - **Email/Password** → włącz (tylko pierwszy przełącznik, „Email link” niepotrzebny) i zapisz.
+     To dla domowników bez konta Google.
 3. **Dozwolona domena**: **Authentication → Settings → Authorized domains → Add domain** i wpisz
    `leebeeu.github.io`. (`localhost` jest już na liście, więc działa też podgląd na komputerze.)
 4. **Baza danych**: **Build → Firestore Database → Create database**. Lokalizacja `europe-central2`
@@ -64,7 +66,9 @@ wystarcza dla rodziny i nie wymaga podawania karty.
 1. Otwórz adres aplikacji (np. https://leebeeu.github.io/rachunki/) i zaloguj się kontem Google.
 2. Kliknij **Utwórz wspólną listę** (np. „Nasz dom”).
 3. **☰ → Rodzina**: dopisz adres Gmail żony i innych domowników.
-4. Oni otwierają ten sam adres i logują się swoim kontem Google. Od razu widzą wspólną listę.
+4. Oni otwierają ten sam adres i logują się tym adresem: **przez Google** albo **e-mailem i hasłem**
+   (zakładka „Załóż konto”, potem kliknięcie linku potwierdzającego w mailu). Od razu widzą wspólną listę.
+   Potwierdzenie adresu jest wymagane, żeby nikt obcy nie założył konta na cudzy e-mail.
 
 ## Instalacja na telefonie
 

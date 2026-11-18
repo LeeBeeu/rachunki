@@ -49,6 +49,7 @@ async function onAuth(user) {
   state.user = user;
   state.household = null;
   if (!user) return showGate('login');
+  if (!user.emailVerified) return showGate('verify');
   try {
     const household = await state.store.findHousehold();
     if (!household) return showGate('create');
@@ -72,15 +73,26 @@ function showGate(kind, error) {
   const logo = el('img', { src: 'icons/icon.svg', alt: '', className: 'logo' });
 
   if (kind === 'login') {
-    const btn = el('button', { className: 'primary', textContent: 'Zaloguj się przez Google' });
-    const err = el('p', { className: 'err', hidden: true });
-    btn.onclick = async () => {
-      btn.disabled = true;
-      try { await state.store.signIn(); } catch (e) { err.textContent = loginError(e); err.hidden = false; }
-      btn.disabled = false;
-    };
     gate.append(logo, el('h2', { textContent: 'Wspólne rachunki' }),
-      el('p', { textContent: 'Zaloguj się, aby zobaczyć listę płatności Twojej rodziny i odhaczać zapłacone rachunki.' }), btn, err);
+      el('p', { textContent: 'Zaloguj się, aby zobaczyć listę płatności Twojej rodziny i odhaczać zapłacone rachunki.' }),
+      loginForm());
+  } else if (kind === 'verify') {
+    const check = el('button', { className: 'primary', textContent: 'Potwierdziłem – wchodzę' });
+    const resend = el('button', { textContent: 'Wyślij link ponownie' });
+    const out = el('button', { className: 'ghost', textContent: 'Wyloguj' });
+    const msg = el('p', { className: 'err', hidden: true });
+    check.onclick = checkVerified.bind(null, msg);
+    resend.onclick = async () => {
+      resend.disabled = true;
+      try { await state.store.resendVerification(); msg.textContent = 'Wysłano nowy link.'; }
+      catch (e) { msg.textContent = authError(e); }
+      msg.hidden = false;
+      setTimeout(() => { resend.disabled = false; }, 30000);
+    };
+    out.onclick = () => state.store.signOut();
+    gate.append(logo, el('h2', { textContent: 'Potwierdź adres e-mail' }),
+      el('p', { textContent: `Wysłaliśmy link na adres ${state.user.email}. Otwórz maila (sprawdź też folder Spam lub Oferty), kliknij link, a potem wróć tutaj.` }),
+      check, msg, resend, out);
   } else if (kind === 'create') {
     const input = el('input', { id: 'hhNameInput', value: 'Nasz dom', maxLength: 40, ariaLabel: 'Nazwa listy' });
     const btn = el('button', { className: 'primary', textContent: 'Utwórz wspólną listę' });
@@ -120,10 +132,97 @@ function showGate(kind, error) {
   }
 }
 
-function loginError(e) {
-  if (e?.code === 'auth/unauthorized-domain') return 'Ten adres strony nie jest dodany w Firebase (Authentication → Settings → Authorized domains).';
-  if (e?.code === 'auth/network-request-failed') return 'Brak połączenia z internetem.';
-  return 'Nie udało się zalogować. Spróbuj ponownie.';
+function authError(e) {
+  switch (e?.code) {
+    case 'auth/unauthorized-domain': return 'Ten adres strony nie jest dodany w Firebase (Authentication → Settings → Authorized domains).';
+    case 'auth/network-request-failed': return 'Brak połączenia z internetem.';
+    case 'auth/invalid-credential':
+    case 'auth/wrong-password':
+    case 'auth/user-not-found': return 'Nieprawidłowy e-mail lub hasło. Jeśli nie masz jeszcze konta, wybierz „Załóż konto”.';
+    case 'auth/email-already-in-use': return 'To konto już istnieje. Wybierz „Mam konto” i zaloguj się.';
+    case 'auth/weak-password': return 'Hasło musi mieć co najmniej 6 znaków.';
+    case 'auth/invalid-email': return 'Wpisz poprawny adres e-mail.';
+    case 'auth/missing-password': return 'Wpisz hasło.';
+    case 'auth/too-many-requests': return 'Za dużo prób. Odczekaj kilka minut i spróbuj ponownie.';
+    case 'auth/operation-not-allowed': return 'Logowanie e-mailem nie jest włączone w Firebase (Authentication → Sign-in method → Email/Password).';
+    default: return 'Nie udało się. Spróbuj ponownie.';
+  }
+}
+
+/** Formularz logowania: Google albo e-mail i hasło (logowanie, zakładanie konta, reset hasła). */
+function loginForm() {
+  let mode = 'signin';
+  const google = el('button', { className: 'primary', type: 'button', textContent: 'Zaloguj się przez Google' });
+  const tabs = el('div', { className: 'tabs', role: 'tablist' });
+  const tabIn = el('button', { type: 'button', textContent: 'Mam konto' });
+  const tabUp = el('button', { type: 'button', textContent: 'Załóż konto' });
+  tabs.append(tabIn, tabUp);
+  const name = el('input', { id: 'authName', autocomplete: 'given-name', placeholder: 'Imię (widoczne przy zapłaconych)', maxLength: 30 });
+  const email = el('input', { id: 'authEmail', type: 'email', autocomplete: 'email', placeholder: 'Adres e-mail', inputMode: 'email' });
+  const pass = el('input', { id: 'authPass', type: 'password', autocomplete: 'current-password', placeholder: 'Hasło' });
+  const submit = el('button', { className: 'primary', type: 'submit' });
+  const reset = el('button', { className: 'ghost', type: 'button', textContent: 'Nie pamiętam hasła' });
+  const msg = el('p', { className: 'err', role: 'alert', hidden: true });
+  const form = el('form', { className: 'auth', noValidate: true }, tabs, name, email, pass, submit, msg, reset);
+
+  const setMode = (m) => {
+    mode = m;
+    tabIn.setAttribute('aria-selected', String(m === 'signin'));
+    tabUp.setAttribute('aria-selected', String(m === 'signup'));
+    name.hidden = m !== 'signup';
+    pass.autocomplete = m === 'signup' ? 'new-password' : 'current-password';
+    pass.placeholder = m === 'signup' ? 'Hasło (min. 6 znaków)' : 'Hasło';
+    submit.textContent = m === 'signup' ? 'Załóż konto' : 'Zaloguj się';
+    reset.hidden = m === 'signup';
+    msg.hidden = true;
+  };
+  tabIn.onclick = () => setMode('signin');
+  tabUp.onclick = () => setMode('signup');
+  setMode('signin');
+
+  const show = (text, ok) => { msg.textContent = text; msg.className = ok ? 'ok' : 'err'; msg.hidden = false; };
+  google.onclick = async () => {
+    google.disabled = true;
+    try { await state.store.signIn(); } catch (e) { show(authError(e)); }
+    google.disabled = false;
+  };
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!isEmail(email.value)) return show('Wpisz poprawny adres e-mail.');
+    if (!pass.value) return show('Wpisz hasło.');
+    submit.disabled = true;
+    try {
+      if (mode === 'signup') {
+        await state.store.signUpEmail(email.value, pass.value, name.value.trim());
+        await onAuth(await state.store.refreshUser());
+      } else {
+        await state.store.signInEmail(email.value, pass.value);
+      }
+    } catch (err) {
+      show(authError(err));
+    }
+    submit.disabled = false;
+  });
+  reset.onclick = async () => {
+    if (!isEmail(email.value)) return show('Wpisz najpierw swój adres e-mail, a potem kliknij „Nie pamiętam hasła”.');
+    try {
+      await state.store.resetPassword(email.value);
+      show(`Wysłaliśmy link do ustawienia nowego hasła na ${normalizeEmail(email.value)}.`, true);
+    } catch (err) { show(authError(err)); }
+  };
+
+  return el('div', { className: 'login' }, google, el('p', { className: 'or', textContent: 'albo e-mailem i hasłem' }), form);
+}
+
+async function checkVerified(msg) {
+  try {
+    const user = await state.store.refreshUser();
+    if (user?.emailVerified) return onAuth(user);
+    msg.textContent = 'Adres nie jest jeszcze potwierdzony. Kliknij link w mailu i spróbuj ponownie.';
+  } catch (e) {
+    msg.textContent = authError(e);
+  }
+  msg.hidden = false;
 }
 
 /* ---------- Lista ---------- */
@@ -395,7 +494,7 @@ async function addMember(e) {
     await state.store.addMember(email);
     $('memberEmail').value = '';
     $('memberErr').hidden = true;
-    toast(`Dodano ${email}. Niech zainstaluje aplikację i zaloguje się tym kontem Google.`);
+    toast(`Dodano ${email}. Niech otworzy aplikację i zaloguje się tym adresem (Google albo e-mail i hasło).`);
   } catch (err) {
     console.error(err);
     memberError('Nie udało się dodać osoby. Sprawdź połączenie.');
@@ -426,7 +525,12 @@ function bindEvents() {
     if (e.key === 'Escape') document.querySelectorAll('.sheet').forEach((s) => { s.hidden = true; });
   });
   // Po powrocie do aplikacji (np. następnego dnia) przelicz terminy.
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    render();
+    // Powrót z poczty po kliknięciu linku potwierdzającego – sprawdź od razu.
+    if (state.user && !state.user.emailVerified && !$('gate').hidden) checkVerified($('gate').querySelector('.err') || document.createElement('p'));
+  });
 }
 
 function changeMonth(delta) {

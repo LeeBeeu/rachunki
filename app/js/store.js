@@ -40,7 +40,7 @@ function createLocalStore() {
 
   return {
     mode: 'local',
-    onAuth(cb) { cb(me); return () => {}; },
+    onAuth(cb) { cb({ ...me, emailVerified: true }); return () => {}; },
     async signIn() {},
     async signOut() {},
     async findHousehold() { return { id: 'local', name: 'Na tym urządzeniu', members: [], owner: 'local' }; },
@@ -99,6 +99,9 @@ async function createCloudStore() {
 
   let user = null;
   let hid = null;
+  const toUser = (u) => ({
+    uid: u.uid, name: u.displayName || u.email, email: normalizeEmail(u.email), photo: u.photoURL, emailVerified: u.emailVerified,
+  });
   const hh = () => fs.doc(db, 'households', hid);
   const col = (name) => fs.collection(db, 'households', hid, name);
 
@@ -106,7 +109,7 @@ async function createCloudStore() {
     mode: 'cloud',
     onAuth(cb) {
       return auth.onAuthStateChanged(a, (u) => {
-        user = u ? { uid: u.uid, name: u.displayName || u.email, email: normalizeEmail(u.email), photo: u.photoURL } : null;
+        user = u ? toUser(u) : null;
         cb(user);
       });
     },
@@ -123,6 +126,29 @@ async function createCloudStore() {
           throw e;
         }
       }
+    },
+    async signInEmail(email, password) {
+      await auth.signInWithEmailAndPassword(a, normalizeEmail(email), password);
+    },
+    async signUpEmail(email, password, name) {
+      const cred = await auth.createUserWithEmailAndPassword(a, normalizeEmail(email), password);
+      if (name) await auth.updateProfile(cred.user, { displayName: name });
+      await auth.sendEmailVerification(cred.user, { url: location.href.split('#')[0] });
+      user = toUser(cred.user);
+    },
+    async resetPassword(email) {
+      await auth.sendPasswordResetEmail(a, normalizeEmail(email), { url: location.href.split('#')[0] });
+    },
+    async resendVerification() {
+      await auth.sendEmailVerification(a.currentUser, { url: location.href.split('#')[0] });
+    },
+    /** Po kliknięciu linku w mailu: odśwież dane konta i token (reguły sprawdzają email_verified w tokenie). */
+    async refreshUser() {
+      if (!a.currentUser) return null;
+      await auth.reload(a.currentUser);
+      if (a.currentUser.emailVerified) await a.currentUser.getIdToken(true);
+      user = toUser(a.currentUser);
+      return user;
     },
     async signOut() { hid = null; await auth.signOut(a); },
     async findHousehold() {

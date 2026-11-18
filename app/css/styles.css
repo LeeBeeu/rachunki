@@ -100,6 +100,14 @@ main {
 .gate p { margin: 0; color: var(--muted); }
 .gate .logo { width: 88px; height: 88px; margin: 0 auto; }
 .gate input { text-align: center; }
+.login, .auth { display: flex; flex-direction: column; gap: 10px; }
+.or { font-size: .85rem; margin: 6px 0 0 !important; }
+.tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; background: var(--line); border-radius: 12px; padding: 4px; }
+.tabs button { border: 0; background: transparent; min-height: 36px; }
+.tabs button[aria-selected="true"] { background: var(--surface); font-weight: 700; box-shadow: 0 1px 3px rgb(0 0 0 / .12); }
+.ok { color: var(--accent); font-size: .85rem; margin: 0; }
+.gate .err { color: var(--late); }
+.gate .ok { color: var(--accent); }
 
 .fab {
   position: fixed; z-index: 15; padding: 14px 20px; border-radius: 999px; box-shadow: var(--shadow);
