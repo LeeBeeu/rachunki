@@ -1,15 +1,13 @@
 // Konfiguracja Firebase – wspólna lista dla całej rodziny.
-//
-// Dopóki tu jest null, aplikacja działa w trybie lokalnym (dane tylko na tym urządzeniu).
-// Jak to uzupełnić: rachunki/README.md, sekcja „Podłączenie Firebase”.
+// Projekt: rachunki-domowe-6506e (https://console.firebase.google.com/project/rachunki-domowe-6506e)
 // Te wartości nie są tajne – dostęp do danych chronią reguły z pliku firestore.rules.
-//
-// Przykład:
-// export const firebaseConfig = {
-//   apiKey: 'AIza...',
-//   authDomain: 'nasze-rachunki.firebaseapp.com',
-//   projectId: 'nasze-rachunki',
-//   appId: '1:1234567890:web:abc123',
-// };
+// Gdy tu jest null, aplikacja działa w trybie lokalnym (dane tylko na tym urządzeniu).
 
-export const firebaseConfig = null;
+export const firebaseConfig = {
+  apiKey: 'AIzaSyB_gKYATT2dl3Kr0lQCMwIhXJobOaxC3z4',
+  authDomain: 'rachunki-domowe-6506e.firebaseapp.com',
+  projectId: 'rachunki-domowe-6506e',
+  storageBucket: 'rachunki-domowe-6506e.firebasestorage.app',
+  messagingSenderId: '962727946659',
+  appId: '1:962727946659:web:2afbb2458551a8f36c9216',
+};
