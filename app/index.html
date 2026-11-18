@@ -22,6 +22,33 @@
     <!-- Ekran startowy (logowanie / zakładanie listy) -->
     <section id="gate" class="gate" hidden></section>
 
+    <nav class="views" id="views" role="tablist" aria-label="Widok" hidden>
+      <button type="button" id="tabBoard" role="tab" aria-selected="true">Miesiąc</button>
+      <button type="button" id="tabHistory" role="tab" aria-selected="false">Historia</button>
+    </nav>
+
+    <!-- Historia i wykresy -->
+    <section id="history" hidden>
+      <div class="summary two">
+        <div><small>Zapłacono w 12 mies.</small><b id="hTotal">0 zł</b></div>
+        <div><small>Średnio miesięcznie</small><b id="hAvg">0 zł</b></div>
+      </div>
+      <section class="chart-card">
+        <h2>Zapłacone w kolejnych miesiącach</h2>
+        <p class="readout" id="hReadout" aria-live="polite"></p>
+        <div class="chart" id="hChart"></div>
+      </section>
+      <section class="chart-card">
+        <h2>Na co idą pieniądze <span class="opt">(12 mies.)</span></h2>
+        <div id="hCats"></div>
+      </section>
+      <section class="chart-card">
+        <h2>Każda płatność osobno</h2>
+        <p class="hint">Stuknij, aby zobaczyć historię zapłat.</p>
+        <div id="hBills"></div>
+      </section>
+    </section>
+
     <!-- Lista miesiąca -->
     <section id="board" hidden>
       <div class="month">
@@ -42,22 +69,27 @@
     </section>
   </main>
 
-  <button class="primary fab" id="addBtn" hidden>+ Dodaj płatność</button>
+  <button class="primary fab" id="addBtn" hidden>+ Dodaj</button>
 
   <!-- Formularz płatności -->
   <div class="sheet" id="billSheet" hidden>
     <form id="billForm" class="panel" novalidate>
       <h2 id="formTitle">Nowa płatność</h2>
+      <div class="tabs" role="tablist" aria-label="Rodzaj">
+        <button type="button" id="kindRecurring" role="tab">Stała płatność</button>
+        <button type="button" id="kindOnce" role="tab">Jednorazowy wydatek</button>
+      </div>
       <label>Nazwa<input id="fName" maxlength="60" placeholder="np. Woda – wodociągi" autocomplete="off"></label>
       <div class="row">
-        <label>Kwota (zł)<input id="fAmount" inputmode="decimal" placeholder="np. 120,50" autocomplete="off"></label>
-        <label>Dzień płatności<input id="fDay" type="number" min="1" max="31" inputmode="numeric"></label>
+        <label>Kwota (zł) <span class="opt" id="fAmountHint">(puste = zmienna)</span><input id="fAmount" inputmode="decimal" placeholder="np. 120,50" autocomplete="off"></label>
+        <label class="recurring">Dzień płatności<input id="fDay" type="number" min="1" max="31" inputmode="numeric"></label>
+        <label class="once">Kiedy zapłacić<input id="fDate" type="date"></label>
       </div>
       <div class="row">
-        <label>Powtarza się<select id="fEvery"></select></label>
+        <label class="recurring">Powtarza się<select id="fEvery"></select></label>
         <label>Kategoria<select id="fCat"></select></label>
       </div>
-      <div class="row">
+      <div class="row recurring">
         <label>Od miesiąca<input id="fStart" type="month"></label>
         <label>Do miesiąca <span class="opt">(opcjonalnie)</span><input id="fEnd" type="month"></label>
       </div>
@@ -68,6 +100,26 @@
         <span class="spacer"></span>
         <button type="button" class="ghost" data-close>Anuluj</button>
         <button type="submit" class="primary" id="saveBtn">Zapisz</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Zapłata: faktyczna kwota i data -->
+  <div class="sheet" id="paySheet" hidden>
+    <form id="payForm" class="panel" novalidate>
+      <h2 id="payTitle">Zapłata</h2>
+      <p class="hint" id="payPlan"></p>
+      <div class="row">
+        <label>Zapłacona kwota (zł)<input id="pAmount" inputmode="decimal" autocomplete="off"></label>
+        <label>Data zapłaty<input id="pDate" type="date"></label>
+      </div>
+      <p class="hint" id="payWho"></p>
+      <p class="err" id="pErr" role="alert" hidden></p>
+      <div class="actions">
+        <button type="button" class="danger" id="unpayBtn">Cofnij zapłatę</button>
+        <span class="spacer"></span>
+        <button type="button" class="ghost" data-close>Anuluj</button>
+        <button type="submit" class="primary" id="paySave">Zapisz</button>
       </div>
     </form>
   </div>

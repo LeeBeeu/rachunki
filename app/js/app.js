@@ -1,7 +1,8 @@
 // Rachunki – ekrany i obsługa zdarzeń.
 import {
   EVERY, CATEGORIES, periodKey, currentPeriod, shiftMonth, monthItems, summary, overdueBefore,
-  validateBill, formatPLN, isEmail, normalizeEmail,
+  validateBill, formatPLN, isEmail, normalizeEmail, parseAmount, paidAmount, isoDate, oneOffFromDate, dueDate,
+  periodsBack, historyByMonth, categoryTotals, billHistory,
 } from './calc.js';
 import { createStore } from './store.js';
 
@@ -24,6 +25,13 @@ const state = {
   confirmDelete: false,
   unsub: [],
   unsubPayments: null,
+  view: 'board',
+  formKind: 'recurring',
+  paying: null,
+  historyPayments: [],
+  unsubHistory: null,
+  historyPick: null,
+  openBillId: null,
 };
 
 const period = () => periodKey(state.cur.y, state.cur.m);
@@ -64,6 +72,8 @@ async function onAuth(user) {
 
 function showGate(kind, error) {
   $('board').hidden = true;
+  $('history').hidden = true;
+  $('views').hidden = true;
   $('addBtn').hidden = true;
   $('menuBtn').hidden = kind === 'login' || kind === 'offline';
   $('hhName').textContent = 'Rachunki';
@@ -229,9 +239,9 @@ async function checkVerified(msg) {
 
 function startBoard() {
   $('gate').hidden = true;
-  $('board').hidden = false;
-  $('addBtn').hidden = false;
+  $('views').hidden = false;
   $('menuBtn').hidden = false;
+  setView(location.hash === '#historia' ? 'history' : 'board');
   const s = state.store;
   const onError = (e) => {
     console.error(e);
@@ -251,6 +261,7 @@ function startBoard() {
     state.bills = bills;
     render();
     renderMenu();
+    renderHistory();
   }, onError));
   watchPayments();
   render();
@@ -270,6 +281,9 @@ function stopWatching() {
   state.unsub = [];
   state.unsubPayments?.();
   state.unsubPayments = null;
+  state.unsubHistory?.();
+  state.unsubHistory = null;
+  state.historyPayments = [];
   state.bills = [];
   state.payments = {};
 }
@@ -320,7 +334,7 @@ function billRow(item, p) {
     ariaLabel: `${payment ? 'Cofnij zapłatę' : 'Oznacz jako zapłacone'}: ${bill.name}`,
   });
   check.setAttribute('aria-pressed', String(!!payment));
-  check.onclick = () => togglePaid(bill, p, !!payment);
+  check.onclick = () => togglePaid(bill, p, payment);
 
   const dd = due.toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' });
   let pill;
@@ -336,12 +350,18 @@ function billRow(item, p) {
   }
   const info = el('div', { className: 'info', role: 'button', tabIndex: 0, ariaLabel: `Edytuj: ${bill.name}` },
     el('div', { className: 'name', textContent: bill.name }),
-    el('div', { className: 'meta' }, pill, el('span', { textContent: bill.category }),
+    el('div', { className: 'meta' }, pill, el('span', { textContent: Number(bill.every) === 0 ? `${bill.category} · jednorazowo` : bill.category }),
       bill.note ? el('span', { className: 'note', textContent: bill.note }) : null));
   info.onclick = () => openBillForm(bill);
   info.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openBillForm(bill); } };
-  const amount = payment && payment.amount !== bill.amount ? payment.amount : bill.amount;
-  return el('div', { className: `bill ${status}` }, check, info, el('div', { className: 'amt', textContent: amount ? formatPLN(amount) : '—' }));
+  const planned = Number(bill.amount) || 0;
+  const amount = payment ? paidAmount(payment, bill) : planned;
+  const amt = el('button', {
+    type: 'button', className: 'amt', ariaLabel: `${payment ? 'Zmień zapłaconą kwotę' : 'Zapłać inną kwotą'}: ${bill.name}`,
+  }, el('span', { textContent: amount ? formatPLN(amount) : 'zmienna' }),
+  payment && planned && amount !== planned ? el('small', { textContent: `plan ${formatPLN(planned)}` }) : null);
+  amt.onclick = () => openPaySheet(bill, p, payment);
+  return el('div', { className: `bill ${status}` }, check, info, amt);
 }
 
 function renderOverdue() {
@@ -355,20 +375,22 @@ function renderOverdue() {
     el('h2', { textContent: `Niezapłacone z poprzednich miesięcy · ${list.length}` }),
     ...list.map(({ bill, period: p, due }) => {
       const btn = el('button', { textContent: 'Zapłacone' });
-      btn.onclick = () => togglePaid(bill, p, false);
+      btn.onclick = () => togglePaid(bill, p, null);
       return el('div', { className: 'item' },
         el('span', { textContent: `${bill.name} – ${due.toLocaleDateString('pl-PL', { day: 'numeric', month: 'long' })}${bill.amount ? `, ${formatPLN(bill.amount)}` : ''}` }), btn);
     })));
 }
 
-async function togglePaid(bill, p, isPaid) {
+async function togglePaid(bill, p, payment) {
+  // Kwota zmienna: najpierw zapytaj, ile zapłacono.
+  if (!payment && !Number(bill.amount)) return openPaySheet(bill, p, null);
   try {
-    if (isPaid) {
+    if (payment) {
       await state.store.unmarkPaid(bill.id, p);
       toast(`Cofnięto: ${bill.name}`);
     } else {
       await state.store.markPaid(bill, p);
-      toast(`Zapłacone: ${bill.name}`, 'Cofnij', () => state.store.unmarkPaid(bill.id, p));
+      toast(`Zapłacone: ${bill.name}`, 'Inna kwota', () => openPaySheet(bill, p, { amount: bill.amount, paidAt: new Date().toISOString(), paidByName: state.user?.name }));
     }
   } catch (e) {
     console.error(e);
@@ -378,21 +400,100 @@ async function togglePaid(bill, p, isPaid) {
 
 const firstName = (name) => String(name).split(/[\s@]/)[0];
 
+/* ---------- Zapłata: faktyczna kwota i data ---------- */
+
+function openPaySheet(bill, p, payment) {
+  state.paying = { bill, period: p, payment };
+  const monthName = new Date(Number(p.slice(0, 4)), Number(p.slice(5)) - 1, 1).toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' });
+  $('payTitle').textContent = `${bill.name} · ${monthName}`;
+  $('payPlan').textContent = Number(bill.amount) ? `Planowana kwota: ${formatPLN(bill.amount)}` : 'Kwota zmienna: wpisz, ile zapłacono.';
+  const amount = payment ? paidAmount(payment, bill) : Number(bill.amount) || 0;
+  $('pAmount').value = amount ? String(amount).replace('.', ',') : '';
+  $('pDate').value = isoDate(payment?.paidAt ? new Date(payment.paidAt) : new Date());
+  $('payWho').textContent = payment?.paidByName ? `Odhaczone przez: ${payment.paidByName}` : '';
+  $('payWho').hidden = !payment?.paidByName;
+  $('unpayBtn').hidden = !payment;
+  $('unpayBtn').textContent = 'Cofnij zapłatę';
+  $('paySave').textContent = payment ? 'Zapisz' : 'Zapłacone';
+  $('pErr').hidden = true;
+  $('paySheet').hidden = false;
+  $('pAmount').focus();
+}
+
+async function savePayment(e) {
+  e.preventDefault();
+  const { bill, period: p, payment } = state.paying;
+  const amount = parseAmount($('pAmount').value);
+  if (!amount) return payError('Wpisz zapłaconą kwotę.');
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec($('pDate').value);
+  if (!m) return payError('Wybierz datę zapłaty.');
+  const paidAt = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12).toISOString();
+  $('paySave').disabled = true;
+  try {
+    const exists = Object.values(state.payments).some((x) => x.billId === bill.id && x.period === p)
+      || state.historyPayments.some((x) => x.billId === bill.id && x.period === p);
+    if (payment && exists) await state.store.updatePayment(bill.id, p, { amount, paidAt });
+    else await state.store.markPaid(bill, p, { amount, paidAt });
+    $('paySheet').hidden = true;
+    toast(`Zapłacone: ${bill.name}, ${formatPLN(amount)}`);
+  } catch (err) {
+    console.error(err);
+    payError('Nie udało się zapisać. Sprawdź połączenie i spróbuj ponownie.');
+  }
+  $('paySave').disabled = false;
+}
+
+async function unpay() {
+  const btn = $('unpayBtn');
+  if (!btn.dataset.confirm) { btn.dataset.confirm = '1'; btn.textContent = 'Na pewno cofnąć?'; return; }
+  delete btn.dataset.confirm;
+  const { bill, period: p } = state.paying;
+  try {
+    await state.store.unmarkPaid(bill.id, p);
+    $('paySheet').hidden = true;
+    toast(`Cofnięto: ${bill.name}`);
+  } catch (err) {
+    console.error(err);
+    payError('Nie udało się cofnąć. Spróbuj ponownie.');
+  }
+}
+
+function payError(text) {
+  $('pErr').textContent = text;
+  $('pErr').hidden = false;
+}
+
 /* ---------- Formularz płatności ---------- */
 
 function fillSelects() {
-  $('fEvery').append(...EVERY.map((e) => el('option', { value: String(e.value), textContent: e.label })));
+  $('fEvery').append(...EVERY.filter((e) => e.value !== 0).map((e) => el('option', { value: String(e.value), textContent: e.label })));
   $('fCat').append(...CATEGORIES.map((c) => el('option', { value: c, textContent: c })));
+}
+
+function setFormKind(kind) {
+  state.formKind = kind;
+  const once = kind === 'once';
+  $('kindRecurring').setAttribute('aria-selected', String(!once));
+  $('kindOnce').setAttribute('aria-selected', String(once));
+  document.querySelectorAll('#billForm .recurring').forEach((n) => { n.hidden = once; });
+  document.querySelectorAll('#billForm .once').forEach((n) => { n.hidden = !once; });
+  $('fAmountHint').hidden = once;
+  $('fName').placeholder = once ? 'np. Naprawa pralki, prezent dla Zosi' : 'np. Woda – wodociągi';
+  if (!state.editing) $('formTitle').textContent = once ? 'Nowy wydatek' : 'Nowa płatność';
 }
 
 function openBillForm(bill) {
   state.editing = bill || null;
   state.confirmDelete = false;
-  $('formTitle').textContent = bill ? 'Edytuj płatność' : 'Nowa płatność';
+  const once = bill ? Number(bill.every) === 0 : false;
+  $('formTitle').textContent = bill ? (once ? 'Edytuj wydatek' : 'Edytuj płatność') : 'Nowa płatność';
+  $('fDate').value = bill && once
+    ? `${bill.start}-${String(bill.day).padStart(2, '0')}`
+    : isoDate(dueDate({ day: now().getDate() }, period()));
   $('fName').value = bill?.name ?? '';
   $('fAmount').value = bill?.amount ? String(bill.amount).replace('.', ',') : '';
   $('fDay').value = bill?.day ?? 10;
-  $('fEvery').value = String(bill?.every ?? 1);
+  $('fEvery').value = String(bill && !once ? bill.every : 1);
   $('fCat').value = bill?.category ?? 'Media';
   $('fStart').value = bill?.start ?? period();
   $('fEnd').value = bill?.end ?? '';
@@ -401,21 +502,31 @@ function openBillForm(bill) {
   $('delBtn').textContent = 'Usuń';
   $('fErr').hidden = true;
   $('menuSheet').hidden = true;
+  // Rodzaju nie zmienia się przy edycji – to inna rzecz (stała płatność vs jednorazowy wydatek).
+  $('kindRecurring').disabled = !!bill && once;
+  $('kindOnce').disabled = !!bill && !once;
+  setFormKind(once ? 'once' : 'recurring');
   $('billSheet').hidden = false;
   if (!bill) $('fName').focus();
 }
 
 async function saveBill(e) {
   e.preventDefault();
+  let when = { day: $('fDay').value, every: $('fEvery').value, start: $('fStart').value, end: $('fEnd').value };
+  if (state.formKind === 'once') {
+    when = oneOffFromDate($('fDate').value);
+    if (!when) return formError('Wybierz, kiedy trzeba zapłacić.');
+  }
   const { bill, error } = validateBill({
-    name: $('fName').value, amount: $('fAmount').value, day: $('fDay').value, every: $('fEvery').value,
-    category: $('fCat').value, start: $('fStart').value, end: $('fEnd').value, note: $('fNote').value,
+    name: $('fName').value, amount: $('fAmount').value, category: $('fCat').value, note: $('fNote').value, ...when,
   });
   if (error) return formError(error);
+  if (state.formKind === 'once' && !bill.amount) return formError('Wpisz kwotę wydatku.');
   $('saveBtn').disabled = true;
   try {
     if (state.editing) await state.store.updateBill(state.editing.id, bill);
-    else await state.store.addBill({ ...bill, trackFrom: currentPeriod() });
+    // Jednorazowy wydatek z przeszłości ma się pokazać jako zaległy; stała płatność liczy zaległości od dziś.
+    else await state.store.addBill({ ...bill, trackFrom: bill.every === 0 ? bill.start : currentPeriod() });
     $('billSheet').hidden = true;
     toast(state.editing ? 'Zapisano zmiany' : `Dodano: ${bill.name}`);
   } catch (err) {
@@ -428,7 +539,7 @@ async function saveBill(e) {
 async function deleteBill() {
   if (!state.confirmDelete) {
     state.confirmDelete = true;
-    $('delBtn').textContent = 'Na pewno usunąć?';
+    $('delBtn').textContent = 'Usunąć razem z historią zapłat?';
     return;
   }
   try {
@@ -477,7 +588,9 @@ function renderMenu() {
     const edit = el('button', { textContent: 'Edytuj' });
     edit.onclick = () => openBillForm(b);
     $('allBills').append(el('li', {}, el('span', {},
-      b.name, el('small', { textContent: `${b.amount ? formatPLN(b.amount) : 'bez kwoty'} · ${b.day}. dnia · ${every}${b.end ? ` · do ${b.end}` : ''}` })), edit));
+      b.name, el('small', { textContent: Number(b.every) === 0
+        ? `${formatPLN(b.amount)} · jednorazowo, ${b.day}.${b.start.slice(5)}.${b.start.slice(0, 4)}`
+        : `${b.amount ? formatPLN(b.amount) : 'kwota zmienna'} · ${b.day}. dnia · ${every}${b.end ? ` · do ${b.end}` : ''}` })), edit));
   }
   $('accountInfo').textContent = local
     ? 'Tryb lokalny: dane są zapisane tylko w tej przeglądarce.'
@@ -515,6 +628,15 @@ function bindEvents() {
   $('addBtn').onclick = () => openBillForm(null);
   $('menuBtn').onclick = () => { renderMenu(); $('memberErr').hidden = true; $('menuSheet').hidden = false; };
   $('billForm').addEventListener('submit', saveBill);
+  $('kindRecurring').onclick = () => setFormKind('recurring');
+  $('kindOnce').onclick = () => setFormKind('once');
+  $('payForm').addEventListener('submit', savePayment);
+  $('unpayBtn').onclick = unpay;
+  $('tabBoard').onclick = () => { if (location.hash) history.back(); else setView('board'); };
+  $('tabHistory').onclick = () => { if (state.view !== 'history') location.hash = 'historia'; };
+  window.addEventListener('hashchange', () => { if (!$('views').hidden) setView(location.hash === '#historia' ? 'history' : 'board'); });
+  let resizeTimer;
+  window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(renderHistory, 150); });
   $('delBtn').onclick = deleteBill;
   $('memberForm').addEventListener('submit', addMember);
   $('signOutBtn').onclick = async () => { $('menuSheet').hidden = true; await state.store.signOut(); };
@@ -569,3 +691,200 @@ function registerServiceWorker() {
 }
 
 init();
+
+/* ---------- Widok: Miesiąc / Historia ---------- */
+
+function setView(view) {
+  state.view = view;
+  const hist = view === 'history';
+  $('board').hidden = hist;
+  $('history').hidden = !hist;
+  $('addBtn').hidden = hist;
+  $('tabBoard').setAttribute('aria-selected', String(!hist));
+  $('tabHistory').setAttribute('aria-selected', String(hist));
+  if (hist && !state.unsubHistory) {
+    const periods = historyPeriods();
+    state.unsubHistory = state.store.watchPayments(periods[0], periods[periods.length - 1], (map) => {
+      state.historyPayments = Object.values(map);
+      renderHistory();
+    }, (e) => console.error(e));
+  }
+  if (hist) renderHistory(); else render();
+  window.scrollTo(0, 0);
+}
+
+const historyPeriods = () => periodsBack({ y: now().getFullYear(), m: now().getMonth() }, 12);
+const monthShort = (p) => new Date(Number(p.slice(0, 4)), Number(p.slice(5)) - 1, 1).toLocaleDateString('pl-PL', { month: 'short' }).replace('.', '');
+const monthLong = (p) => new Date(Number(p.slice(0, 4)), Number(p.slice(5)) - 1, 1).toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' });
+const compactPLN = (n) => `${new Intl.NumberFormat('pl-PL', { notation: 'compact', maximumFractionDigits: 1 }).format(n)} zł`;
+const SVG = 'http://www.w3.org/2000/svg';
+const svg = (tag, attrs = {}) => {
+  const n = document.createElementNS(SVG, tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  return n;
+};
+
+/** Zaokrąglenie skali w górę do „ładnej” wartości (1, 2, 2,5, 5 × 10^n). */
+function niceMax(v) {
+  if (v <= 0) return 100;
+  const pow = 10 ** Math.floor(Math.log10(v));
+  for (const m of [1, 2, 2.5, 5, 10]) if (m * pow >= v) return m * pow;
+  return 10 * pow;
+}
+
+/** Słupek z zaokrąglonym górnym końcem (4 px), oparty o oś. */
+function barPath(x, y, w, h, r = 4) {
+  if (h <= 0) return '';
+  const rr = Math.min(r, h, w / 2);
+  return `M${x},${y + h}V${y + rr}Q${x},${y} ${x + rr},${y}H${x + w - rr}Q${x + w},${y} ${x + w},${y + rr}V${y + h}Z`;
+}
+
+function renderHistory() {
+  if ($('history').hidden) return;
+  const periods = historyPeriods();
+  const rows = historyByMonth(state.bills, state.historyPayments, periods);
+  const firstIdx = rows.findIndex((r) => r.count > 0);
+  const active = firstIdx < 0 ? [] : rows.slice(firstIdx);
+  const total = rows.reduce((a, r) => a + r.paid, 0);
+  $('hTotal').textContent = formatPLN(total);
+  $('hAvg').textContent = active.length ? formatPLN(total / active.length) : '—';
+
+  // Wykres miesięcy
+  const box = $('hChart');
+  box.textContent = '';
+  if (!active.length) {
+    box.append(el('p', { className: 'empty', textContent: 'Wykres pojawi się, gdy odhaczysz pierwsze zapłacone rachunki.' }));
+    $('hReadout').textContent = '';
+  } else {
+    drawMonths(box, rows);
+  }
+
+  // Kategorie
+  const cats = categoryTotals(state.bills, state.historyPayments, periods);
+  const catBox = $('hCats');
+  catBox.textContent = '';
+  if (!cats.length) catBox.append(el('p', { className: 'hint', textContent: 'Brak zapłat w ostatnich 12 miesiącach.' }));
+  const maxCat = Math.max(...cats.map((c) => c.total), 1);
+  for (const c of cats) {
+    const track = el('div', { className: 'hbar' }, el('i', {}));
+    track.firstChild.style.width = `${(c.total / maxCat) * 100}%`;
+    catBox.append(el('div', { className: 'cat' },
+      el('div', { className: 'cat-head' }, el('span', { textContent: c.category }),
+        el('b', { textContent: `${formatPLN(c.total)}` }), el('small', { textContent: `${Math.round(c.share * 100)}%` })),
+      track));
+  }
+
+  // Każda płatność osobno
+  const billBox = $('hBills');
+  billBox.textContent = '';
+  const withHistory = state.bills
+    .map((b) => ({ bill: b, h: billHistory(b, state.historyPayments) }))
+    .filter((x) => x.h.count > 0 || Number(x.bill.every) !== 0)
+    .sort((a, b) => b.h.count - a.h.count || a.bill.name.localeCompare(b.bill.name, 'pl'));
+  if (!withHistory.length) billBox.append(el('p', { className: 'hint', textContent: 'Brak płatności.' }));
+  for (const { bill, h } of withHistory) {
+    const open = state.openBillId === bill.id;
+    const head = el('button', { type: 'button', className: 'bh-head', ariaExpanded: String(open) },
+      el('span', { className: 'name', textContent: bill.name }),
+      el('small', { textContent: h.count
+        ? `${h.count} ${h.count === 1 ? 'zapłata' : h.count < 5 ? 'zapłaty' : 'zapłat'} · średnio ${formatPLN(h.average)}`
+        : 'jeszcze bez zapłat' }));
+    head.setAttribute('aria-expanded', String(open));
+    head.onclick = () => { state.openBillId = open ? null : bill.id; renderHistory(); };
+    const item = el('div', { className: 'bh' }, head);
+    if (open && h.count) {
+      if (h.count > 1) {
+        item.append(el('p', { className: 'hint', textContent: `Najmniej ${formatPLN(h.min)}, najwięcej ${formatPLN(h.max)}.` }));
+        item.append(miniBars(periods, h.list));
+      }
+      item.append(el('ul', { className: 'bh-list' }, ...h.list.map((x) => el('li', {},
+        el('span', { textContent: monthLong(x.period) }),
+        el('span', { className: 'who', textContent: `${x.paidAt ? new Date(x.paidAt).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }) : ''}${x.paidByName ? ` · ${firstName(x.paidByName)}` : ''}` }),
+        el('b', { textContent: formatPLN(x.amount) })))));
+    }
+    billBox.append(item);
+  }
+}
+
+function drawMonths(box, rows) {
+  const W = Math.max(280, box.clientWidth || 340);
+  const H = 200;
+  const pad = { l: 60, r: 4, t: 10, b: 24 };
+  const iw = W - pad.l - pad.r;
+  const ih = H - pad.t - pad.b;
+  const max = niceMax(Math.max(...rows.map((r) => r.paid)));
+  const y = (v) => pad.t + ih - (v / max) * ih;
+  const band = iw / rows.length;
+  const bw = Math.max(6, Math.min(28, band - 2));
+  const chart = svg('svg', { viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: 'img', 'aria-label': 'Zapłacone kwoty w ostatnich 12 miesiącach' });
+
+  for (const t of [0, max / 2, max]) {
+    chart.append(svg('line', { x1: pad.l, x2: W - pad.r, y1: y(t), y2: y(t), class: t ? 'grid' : 'axis' }));
+    const label = svg('text', { x: pad.l - 6, y: y(t) + 4, 'text-anchor': 'end', class: 'tick' });
+    label.textContent = t ? compactPLN(t) : '0';
+    chart.append(label);
+  }
+  const current = rows.length - 1;
+  if (state.historyPick == null || state.historyPick >= rows.length) state.historyPick = current;
+  const bars = [];
+  rows.forEach((r, i) => {
+    const cx = pad.l + band * i + band / 2;
+    const bar = svg('path', { d: barPath(cx - bw / 2, y(r.paid), bw, pad.t + ih - y(r.paid)), class: i === current ? 'bar now' : 'bar' });
+    bars.push(bar);
+    chart.append(bar);
+    const lbl = svg('text', { x: cx, y: H - 6, 'text-anchor': 'middle', class: 'tick' });
+    lbl.textContent = rows.length > 8 && W < 360 && i % 2 !== current % 2 ? '' : monthShort(r.period);
+    chart.append(lbl);
+    const hit = svg('rect', { x: pad.l + band * i, y: 0, width: band, height: H, class: 'hit', tabindex: 0 });
+    const pick = () => { state.historyPick = i; mark(); };
+    hit.addEventListener('pointerenter', pick);
+    hit.addEventListener('click', pick);
+    hit.addEventListener('focus', pick);
+    chart.append(hit);
+  });
+  const mark = () => {
+    bars.forEach((b, i) => b.classList.toggle('dim', i !== state.historyPick));
+    const r = rows[state.historyPick];
+    $('hReadout').textContent = r.count
+      ? `${monthLong(r.period)}: zapłacono ${formatPLN(r.paid)}${r.planned ? ` (plan ${formatPLN(r.planned)})` : ''}, ${r.count} ${r.count === 1 ? 'płatność' : r.count < 5 ? 'płatności' : 'płatności'}`
+      : `${monthLong(r.period)}: brak zapłat`;
+  };
+  mark();
+  box.append(chart);
+
+  // Widok tabeli – te same liczby co na wykresie.
+  const table = el('table', {},
+    el('thead', {}, el('tr', {}, el('th', { textContent: 'Miesiąc' }), el('th', { textContent: 'Zapłacono' }), el('th', { textContent: 'Plan' }))),
+    el('tbody', {}, ...[...rows].reverse().map((r) => el('tr', {},
+      el('td', { textContent: monthLong(r.period) }), el('td', { textContent: formatPLN(r.paid) }), el('td', { textContent: formatPLN(r.planned) })))));
+  box.append(el('details', { className: 'table-view' }, el('summary', { textContent: 'Pokaż jako tabelę' }), el('div', { className: 'table-wrap' }, table)));
+}
+
+function miniBars(periods, list) {
+  const byPeriod = new Map(list.map((x) => [x.period, x.amount]));
+  const W = 300;
+  const H = 56;
+  const max = Math.max(...list.map((x) => x.amount), 1);
+  const band = W / periods.length;
+  const bw = Math.min(16, band - 3);
+  const chart = svg('svg', { viewBox: `0 0 ${W} ${H + 14}`, class: 'mini', role: 'img', 'aria-label': 'Kwoty zapłat w kolejnych miesiącach' });
+  periods.forEach((p, i) => {
+    const v = byPeriod.get(p) || 0;
+    const h = (v / max) * H;
+    const x = band * i + (band - bw) / 2;
+    if (v) {
+      const b = svg('path', { d: barPath(x, H - h, bw, h, 3), class: 'bar' });
+      const t = svg('title');
+      t.textContent = `${monthLong(p)}: ${formatPLN(v)}`;
+      b.append(t);
+      chart.append(b);
+    }
+    if (i === 0 || i === periods.length - 1) {
+      const l = svg('text', { x: band * i + band / 2, y: H + 12, 'text-anchor': 'middle', class: 'tick' });
+      l.textContent = monthShort(p);
+      chart.append(l);
+    }
+  });
+  chart.append(svg('line', { x1: 0, x2: W, y1: H, y2: H, class: 'axis' }));
+  return chart;
+}

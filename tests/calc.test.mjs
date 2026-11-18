@@ -98,3 +98,49 @@ test('przesuwanie miesięcy przez granicę roku', () => {
   assert.deepEqual(shiftMonth({ y: 2026, m: 0 }, -1), { y: 2025, m: 11 });
   assert.equal(periodKey(2026, 0), '2026-01');
 });
+
+import {
+  paidAmount, oneOffFromDate, periodsBack, historyByMonth, categoryTotals, billHistory, isoDate,
+} from '../app/js/calc.js';
+
+test('kwota zapłacona: wpisana albo planowana', () => {
+  assert.equal(paidAmount({ amount: 230 }, { amount: 210 }), 230);
+  assert.equal(paidAmount({}, { amount: 210 }), 210);
+  assert.equal(paidAmount(null, { amount: 210 }), 0);
+});
+
+test('jednorazowy wydatek z daty', () => {
+  assert.deepEqual(oneOffFromDate('2026-12-05'), { start: '2026-12', day: 5, every: 0, end: '' });
+  assert.equal(oneOffFromDate(''), null);
+  assert.equal(isoDate(new Date(2026, 0, 3)), '2026-01-03');
+});
+
+test('historia: miesiące, kategorie, jedna płatność', () => {
+  assert.deepEqual(periodsBack({ y: 2026, m: 1 }, 3), ['2025-12', '2026-01', '2026-02']);
+  const bills = [
+    { id: 'p', name: 'Prąd', amount: 200, day: 10, every: 1, start: '2025-12', category: 'Media' },
+    { id: 'c', name: 'Czynsz', amount: 800, day: 10, every: 1, start: '2026-01', category: 'Mieszkanie' },
+    { id: 'n', name: 'Naprawa auta', amount: 500, day: 3, every: 0, start: '2026-02', category: 'Samochód' },
+  ];
+  const pays = [
+    { billId: 'p', period: '2025-12', amount: 180, paidAt: '2025-12-09T10:00:00Z', paidByName: 'Ania' },
+    { billId: 'p', period: '2026-01', amount: 240 },
+    { billId: 'c', period: '2026-01' },
+    { billId: 'n', period: '2026-02', amount: 520 },
+  ];
+  const periods = ['2025-12', '2026-01', '2026-02'];
+  assert.deepEqual(historyByMonth(bills, pays, periods), [
+    { period: '2025-12', paid: 180, planned: 200, count: 1 },
+    { period: '2026-01', paid: 1040, planned: 1000, count: 2 },
+    { period: '2026-02', paid: 520, planned: 1500, count: 1 },
+  ]);
+  const cats = categoryTotals(bills, pays, periods);
+  assert.deepEqual(cats.map((c) => [c.category, c.total]), [['Mieszkanie', 800], ['Samochód', 520], ['Media', 420]]);
+  assert.ok(Math.abs(cats.reduce((s, c) => s + c.share, 0) - 1) < 1e-9);
+  const variable = [{ id: 'v', amount: 0, day: 1, every: 1, start: '2026-01' }];
+  assert.deepEqual(historyByMonth(variable, [{ billId: 'v', period: '2026-01', amount: 99 }], ['2026-01', '2026-02'])
+    .map((r) => r.planned), [99, 0]);
+  const h = billHistory(bills[0], pays);
+  assert.deepEqual(h.list.map((x) => [x.period, x.amount]), [['2026-01', 240], ['2025-12', 180]]);
+  assert.deepEqual([h.count, h.average, h.min, h.max], [2, 210, 180, 240]);
+});

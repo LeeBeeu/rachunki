@@ -10,7 +10,7 @@ export const EVERY = [
   { value: 0, label: 'jednorazowo' },
 ];
 
-export const CATEGORIES = ['Media', 'Mieszkanie', 'Kredyt', 'Ubezpieczenie', 'Abonamenty', 'Dzieci', 'Samochód', 'Podatki', 'Inne'];
+export const CATEGORIES = ['Media', 'Mieszkanie', 'Kredyt', 'Ubezpieczenie', 'Abonamenty', 'Dzieci', 'Samochód', 'Podatki', 'Zakupy', 'Zdrowie', 'Prezenty', 'Inne'];
 
 export const SOON_DAYS = 3;
 
@@ -171,4 +171,92 @@ export function normalizeEmail(email) {
 
 export function isEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(email));
+}
+
+/* ---------- Kwota zapłacona ---------- */
+
+/** Kwota, którą faktycznie zapłacono (albo planowana, gdy nie wpisano innej). */
+export function paidAmount(payment, bill) {
+  if (!payment) return 0;
+  const n = Number(payment.amount ?? bill?.amount);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** 'RRRR-MM-DD' (lokalnie) dla daty. */
+export function isoDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Jednorazowy wydatek z daty 'RRRR-MM-DD' → pola płatności (every = 0). */
+export function oneOffFromDate(date) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date || '');
+  if (!m) return null;
+  return { start: `${m[1]}-${m[2]}`, day: Number(m[3]), every: 0, end: '' };
+}
+
+/* ---------- Historia ---------- */
+
+/** n miesięcy kończących się na `cur` ({y, m}), od najstarszego. */
+export function periodsBack(cur, n) {
+  const out = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const d = shiftMonth(cur, -i);
+    out.push(periodKey(d.y, d.m));
+  }
+  return out;
+}
+
+/** Dla każdego miesiąca: ile zapłacono i ile było zaplanowane. payments: lista dokumentów zapłat. */
+export function historyByMonth(bills, payments, periods) {
+  const byId = new Map(bills.map((b) => [b.id, b]));
+  return periods.map((period) => {
+    let paid = 0;
+    let count = 0;
+    for (const p of payments) {
+      if (p.period !== period) continue;
+      paid += paidAmount(p, byId.get(p.billId));
+      count += 1;
+    }
+    // Płatność o zmiennej kwocie (bez kwoty planowanej) liczy się do planu tym, co zapłacono.
+    const planned = bills.filter((b) => occursIn(b, period)).reduce((s, b) => {
+      if (Number(b.amount)) return s + Number(b.amount);
+      const p = payments.find((x) => x.billId === b.id && x.period === period);
+      return s + paidAmount(p, b);
+    }, 0);
+    return { period, paid: round2(paid), planned: round2(planned), count };
+  });
+}
+
+/** Suma zapłat w kategoriach w podanych miesiącach, od największej. */
+export function categoryTotals(bills, payments, periods) {
+  const set = new Set(periods);
+  const byId = new Map(bills.map((b) => [b.id, b]));
+  const sums = new Map();
+  for (const p of payments) {
+    if (!set.has(p.period)) continue;
+    const bill = byId.get(p.billId);
+    const cat = bill?.category || 'Inne';
+    sums.set(cat, (sums.get(cat) || 0) + paidAmount(p, bill));
+  }
+  const total = [...sums.values()].reduce((a, b) => a + b, 0);
+  return [...sums.entries()]
+    .map(([category, sum]) => ({ category, total: round2(sum), share: total ? sum / total : 0 }))
+    .filter((c) => c.total > 0)
+    .sort((a, b) => b.total - a.total);
+}
+
+/** Zapłaty jednej płatności, od najnowszej, ze statystyką. */
+export function billHistory(bill, payments) {
+  const list = payments
+    .filter((p) => p.billId === bill.id)
+    .map((p) => ({ period: p.period, amount: paidAmount(p, bill), paidAt: p.paidAt, paidByName: p.paidByName || '' }))
+    .sort((a, b) => b.period.localeCompare(a.period));
+  const amounts = list.map((x) => x.amount);
+  return {
+    list,
+    count: list.length,
+    average: amounts.length ? round2(amounts.reduce((a, b) => a + b, 0) / amounts.length) : 0,
+    min: amounts.length ? Math.min(...amounts) : 0,
+    max: amounts.length ? Math.max(...amounts) : 0,
+  };
 }

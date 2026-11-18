@@ -63,11 +63,15 @@ function createLocalStore() {
       for (const [pid, p] of Object.entries(data.payments)) if (p.billId === billId) delete data.payments[pid];
       save();
     },
-    async markPaid(bill, period) {
+    async markPaid(bill, period, extra = {}) {
       data.payments[paymentId(bill.id, period)] = {
-        billId: bill.id, period, amount: bill.amount || 0, paidAt: new Date().toISOString(), paidBy: me.uid, paidByName: me.name,
+        billId: bill.id, period, amount: bill.amount || 0, paidAt: new Date().toISOString(), paidBy: me.uid, paidByName: me.name, ...extra,
       };
       save();
+    },
+    async updatePayment(billId, period, fields) {
+      const id = paymentId(billId, period);
+      if (data.payments[id]) { data.payments[id] = { ...data.payments[id], ...fields }; save(); }
     },
     async unmarkPaid(billId, period) { delete data.payments[paymentId(billId, period)]; save(); },
     async addMember() { throw new Error('Wspólna lista wymaga podłączenia Firebase (patrz README).'); },
@@ -189,10 +193,13 @@ async function createCloudStore() {
       batch.delete(fs.doc(col('bills'), billId));
       await batch.commit();
     },
-    async markPaid(bill, period) {
+    async markPaid(bill, period, extra = {}) {
       await fs.setDoc(fs.doc(col('payments'), paymentId(bill.id, period)), {
-        billId: bill.id, period, amount: bill.amount || 0, paidAt: new Date().toISOString(), paidBy: user.uid, paidByName: user.name,
+        billId: bill.id, period, amount: bill.amount || 0, paidAt: new Date().toISOString(), paidBy: user.uid, paidByName: user.name, ...extra,
       });
+    },
+    async updatePayment(billId, period, fields) {
+      await fs.updateDoc(fs.doc(col('payments'), paymentId(billId, period)), fields);
     },
     async unmarkPaid(billId, period) { await fs.deleteDoc(fs.doc(col('payments'), paymentId(billId, period))); },
     async addMember(email) { await fs.updateDoc(hh(), { members: fs.arrayUnion(normalizeEmail(email)) }); },

@@ -7,6 +7,10 @@ stałych płatności: woda, prąd, czynsz, przedszkole, ubezpieczenia.
 - Lista miesiąca jest pogrupowana: **Po terminie**, **Termin w ciągu 3 dni**, **Do zapłaty**, **Zapłacone**.
 - Niezapłacone płatności z poprzednich miesięcy są w czerwonej ramce na górze, dopóki ktoś ich nie odhaczy.
 - Kliknięcie kółka oznacza płatność jako zapłaconą. Widać, kto zapłacił i kiedy. Można cofnąć.
+- Stuknięcie kwoty pozwala wpisać, ile faktycznie zapłacono i kiedy (np. prąd wyszedł drożej niż zwykle).
+  Płatność bez kwoty (np. prąd, gaz) ma kwotę zmienną: przy odhaczaniu aplikacja pyta, ile zapłacono.
+- **Jednorazowe wydatki** (naprawa, prezent, większe zakupy): przycisk **+ Dodaj → Jednorazowy wydatek**, z datą.
+- **Historia**: wykres zapłat z 12 miesięcy, podział na kategorie i historia każdej płatności (np. jak zmieniał się prąd).
 - Wszyscy domownicy widzą te same dane na żywo. Lista działa też bez internetu, a zmiany wysyłają się po odzyskaniu sieci.
 
 ## Publikacja
