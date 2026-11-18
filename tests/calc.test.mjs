@@ -90,7 +90,13 @@ test('walidacja formularza', () => {
   assert.ok(validateBill({ name: 'X', start: '2026-01', day: 32, every: 1 }).error);
   assert.ok(validateBill({ name: 'X', start: '2026-05', end: '2026-01', day: 1, every: 1 }).error);
   const ok = validateBill({ name: ' Woda ', amount: '99,9', start: '2026-01', day: '10', every: '2', category: 'Media' });
-  assert.deepEqual(ok.bill, { name: 'Woda', amount: 99.9, day: 10, every: 2, start: '2026-01', end: '', category: 'Media', note: '' });
+  assert.deepEqual(ok.bill, {
+    name: 'Woda', amount: 99.9, day: 10, every: 2, start: '2026-01', end: '', category: 'Media', note: '',
+    payer: '', forWhom: '', method: 'przelew',
+  });
+  const full = validateBill({ name: 'Basen', start: '2026-01', day: 5, every: 1, payer: ' Ania@WP.pl ', forWhom: ' Zosia ', method: 'gotowka' });
+  assert.deepEqual([full.bill.payer, full.bill.forWhom, full.bill.method], ['ania@wp.pl', 'Zosia', 'gotowka']);
+  assert.equal(validateBill({ name: 'X', start: '2026-01', day: 5, every: 1, method: 'karta' }).bill.method, 'przelew');
 });
 
 test('przesuwanie miesięcy przez granicę roku', () => {
@@ -143,4 +149,41 @@ test('historia: miesiące, kategorie, jedna płatność', () => {
   const h = billHistory(bills[0], pays);
   assert.deepEqual(h.list.map((x) => [x.period, x.amount]), [['2026-01', 240], ['2025-12', 180]]);
   assert.deepEqual([h.count, h.average, h.min, h.max], [2, 210, 180, 240]);
+});
+
+import { nameKey, displayName, isMine, totalsBy } from '../app/js/calc.js';
+
+test('domownicy: klucz imienia, wyświetlana nazwa', () => {
+  assert.equal(nameKey('Ania.Kowalska@wp.pl'), 'ania_kowalska_wp_pl');
+  const names = { ania_wp_pl: 'Ania' };
+  assert.equal(displayName('ania@wp.pl', names), 'Ania');
+  assert.equal(displayName('leszek@gmail.com', names), 'leszek');
+  assert.equal(displayName('leszek@gmail.com', names, 'Leszek B.'), 'Leszek B.');
+  assert.equal(displayName('', names, 'Ktokolwiek'), 'Ktokolwiek');
+});
+
+test('filtr „Moje”: przypisane do mnie albo do nikogo; zapłacone – kto zapłacił', () => {
+  const me = 'leszek@gmail.com';
+  assert.equal(isMine({ bill: { payer: '' } }, me), true);
+  assert.equal(isMine({ bill: { payer: 'leszek@gmail.com' } }, me), true);
+  assert.equal(isMine({ bill: { payer: 'ania@wp.pl' } }, me), false);
+  assert.equal(isMine({ bill: { payer: '' }, payment: { payerEmail: 'ania@wp.pl' } }, me), false);
+  assert.equal(isMine({ bill: { payer: 'ania@wp.pl' }, payment: { payerEmail: me } }, me), true);
+});
+
+test('sumy: kto zapłacił i na kogo', () => {
+  const bills = [
+    { id: 'b', amount: 100, category: 'Dzieci', forWhom: 'Zosia' },
+    { id: 'c', amount: 800, category: 'Mieszkanie', forWhom: '' },
+  ];
+  const pays = [
+    { billId: 'b', period: '2026-01', payerEmail: 'ania@wp.pl' },
+    { billId: 'c', period: '2026-01', payerEmail: 'leszek@gmail.com' },
+    { billId: 'b', period: '2026-02', payerEmail: 'leszek@gmail.com', amount: 120 },
+  ];
+  const ps = ['2026-01', '2026-02'];
+  assert.deepEqual(totalsBy(bills, pays, ps, (b) => b.forWhom || 'Cała rodzina').map((x) => [x.key, x.total]),
+    [['Cała rodzina', 800], ['Zosia', 220]]);
+  assert.deepEqual(totalsBy(bills, pays, ps, (b, p) => p.payerEmail).map((x) => [x.key, x.total]),
+    [['leszek@gmail.com', 920], ['ania@wp.pl', 100]]);
 });

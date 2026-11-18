@@ -3,6 +3,7 @@ import {
   EVERY, CATEGORIES, periodKey, currentPeriod, shiftMonth, monthItems, summary, overdueBefore,
   validateBill, formatPLN, isEmail, normalizeEmail, parseAmount, paidAmount, isoDate, oneOffFromDate, dueDate,
   periodsBack, historyByMonth, categoryTotals, billHistory,
+  METHODS, methodLabel, nameKey, displayName, isMine, totalsBy,
 } from './calc.js';
 import { createStore } from './store.js';
 
@@ -32,7 +33,14 @@ const state = {
   unsubHistory: null,
   historyPick: null,
   openBillId: null,
+  mineOnly: false,
+  nameSaved: false,
 };
+
+const isCloud = () => state.store?.mode === 'cloud';
+/** Imię domownika do wyświetlenia (Ty → imię z konta, gdy nie zapisano innego). */
+const nameOf = (email) => displayName(email, state.household?.names || {},
+  email && email === state.user?.email ? firstName(state.user.name || '') : '');
 
 const period = () => periodKey(state.cur.y, state.cur.m);
 const isCurrentMonth = () => state.cur.y === now().getFullYear() && state.cur.m === now().getMonth();
@@ -45,6 +53,7 @@ async function init() {
   bindEvents();
   try {
     state.store = await createStore();
+    document.body.classList.toggle('local', state.store.mode === 'local');
   } catch (e) {
     console.error(e);
     return showGate('offline');
@@ -254,6 +263,14 @@ function startBoard() {
       return showGate('create');
     }
     state.household = h;
+    // Zapisz swoje imię w domu, żeby inni widzieli „Ania”, a nie adres e-mail.
+    if (isCloud() && !state.nameSaved && state.user?.name && !h.names?.[nameKey(state.user.email)]) {
+      state.nameSaved = true;
+      s.setMemberName(state.user.email, firstName(state.user.name)).catch((e) => console.error(e));
+    }
+    fillPeopleSelects();
+    render();
+    renderHistory();
     $('hhName').textContent = s.mode === 'local' ? 'Rachunki' : h.name;
     renderMenu();
   }, onError));
@@ -317,9 +334,14 @@ function render() {
       : 'Lista jest pusta. Dodaj pierwszą płatność, np. wodę, prąd albo czynsz. Pojawi się w każdym miesiącu, w którym trzeba ją zapłacić.' }));
     return;
   }
+  const shown = state.mineOnly && isCloud() ? items.filter((i) => isMine(i, state.user?.email)) : items;
+  if (!shown.length) {
+    groups.append(el('div', { className: 'empty', textContent: 'W tym miesiącu nie masz nic przypisanego do zapłaty.' }));
+    return;
+  }
   const sections = [['late', 'Po terminie'], ['soon', 'Termin w ciągu 3 dni'], ['todo', 'Do zapłaty'], ['paid', 'Zapłacone']];
   for (const [status, title] of sections) {
-    const list = items.filter((i) => i.status === status);
+    const list = shown.filter((i) => i.status === status);
     if (!list.length) continue;
     groups.append(el('section', { className: 'group' },
       el('h2', { textContent: `${title} · ${list.length}` }),
@@ -340,7 +362,8 @@ function billRow(item, p) {
   let pill;
   if (payment) {
     const when = new Date(payment.paidAt).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' });
-    pill = el('span', { className: 'pill paid', textContent: `Zapłacone ${when}${payment.paidByName ? ` · ${firstName(payment.paidByName)}` : ''}` });
+    const who = payment.payerEmail ? nameOf(payment.payerEmail) : firstName(payment.paidByName || '');
+    pill = el('span', { className: 'pill paid', textContent: `Zapłacone ${when}${who ? ` · ${who}` : ''}${payment.method === 'gotowka' ? ' · gotówką' : ''}` });
   } else if (status === 'late') {
     pill = el('span', { className: 'pill late', textContent: `Termin minął ${dd} (${-days} dn.)` });
   } else if (status === 'soon') {
@@ -350,7 +373,11 @@ function billRow(item, p) {
   }
   const info = el('div', { className: 'info', role: 'button', tabIndex: 0, ariaLabel: `Edytuj: ${bill.name}` },
     el('div', { className: 'name', textContent: bill.name }),
-    el('div', { className: 'meta' }, pill, el('span', { textContent: Number(bill.every) === 0 ? `${bill.category} · jednorazowo` : bill.category }),
+    el('div', { className: 'meta' }, pill,
+      !payment && bill.payer && isCloud() ? el('span', { className: 'chip who', textContent: `płaci ${nameOf(bill.payer)}` }) : null,
+      bill.forWhom ? el('span', { className: 'chip', textContent: bill.forWhom }) : null,
+      !payment && bill.method === 'gotowka' ? el('span', { className: 'chip', textContent: 'gotówka' }) : null,
+      el('span', { textContent: Number(bill.every) === 0 ? `${bill.category} · jednorazowo` : bill.category }),
       bill.note ? el('span', { className: 'note', textContent: bill.note }) : null));
   info.onclick = () => openBillForm(bill);
   info.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openBillForm(bill); } };
@@ -410,6 +437,9 @@ function openPaySheet(bill, p, payment) {
   const amount = payment ? paidAmount(payment, bill) : Number(bill.amount) || 0;
   $('pAmount').value = amount ? String(amount).replace('.', ',') : '';
   $('pDate').value = isoDate(payment?.paidAt ? new Date(payment.paidAt) : new Date());
+  $('pPayer').value = payment?.payerEmail || bill.payer || state.user?.email || '';
+  if ($('pPayer').selectedIndex < 0) $('pPayer').value = state.user?.email || '';
+  $('pMethod').value = payment?.method || bill.method || 'przelew';
   $('payWho').textContent = payment?.paidByName ? `Odhaczone przez: ${payment.paidByName}` : '';
   $('payWho').hidden = !payment?.paidByName;
   $('unpayBtn').hidden = !payment;
@@ -432,8 +462,10 @@ async function savePayment(e) {
   try {
     const exists = Object.values(state.payments).some((x) => x.billId === bill.id && x.period === p)
       || state.historyPayments.some((x) => x.billId === bill.id && x.period === p);
-    if (payment && exists) await state.store.updatePayment(bill.id, p, { amount, paidAt });
-    else await state.store.markPaid(bill, p, { amount, paidAt });
+    const fields = { amount, paidAt, method: $('pMethod').value };
+    if (isCloud()) fields.payerEmail = $('pPayer').value;
+    if (payment && exists) await state.store.updatePayment(bill.id, p, fields);
+    else await state.store.markPaid(bill, p, fields);
     $('paySheet').hidden = true;
     toast(`Zapłacone: ${bill.name}, ${formatPLN(amount)}`);
   } catch (err) {
@@ -468,6 +500,23 @@ function payError(text) {
 function fillSelects() {
   $('fEvery').append(...EVERY.filter((e) => e.value !== 0).map((e) => el('option', { value: String(e.value), textContent: e.label })));
   $('fCat').append(...CATEGORIES.map((c) => el('option', { value: c, textContent: c })));
+  for (const id of ['fMethod', 'pMethod']) $(id).append(...METHODS.map((m) => el('option', { value: m.value, textContent: m.label })));
+  fillPeopleSelects();
+}
+
+/** Listy wyboru zależne od domu: kto płaci, kto zapłacił, którego dziecka dotyczy. */
+function fillPeopleSelects() {
+  const members = state.household?.members || [];
+  const keep = (id) => $(id).value;
+  const [payer, paid, forWhom] = [keep('fPayer'), keep('pPayer'), keep('fFor')];
+  $('fPayer').replaceChildren(el('option', { value: '', textContent: 'Ktokolwiek' }),
+    ...members.map((m) => el('option', { value: m, textContent: nameOf(m) })));
+  $('pPayer').replaceChildren(...members.map((m) => el('option', { value: m, textContent: nameOf(m) })));
+  $('fFor').replaceChildren(el('option', { value: '', textContent: 'Cała rodzina' }),
+    ...(state.household?.children || []).map((c) => el('option', { value: c, textContent: c })));
+  $('fPayer').value = payer;
+  $('pPayer').value = paid;
+  $('fFor').value = forWhom;
 }
 
 function setFormKind(kind) {
@@ -495,6 +544,13 @@ function openBillForm(bill) {
   $('fDay').value = bill?.day ?? 10;
   $('fEvery').value = String(bill && !once ? bill.every : 1);
   $('fCat').value = bill?.category ?? 'Media';
+  fillPeopleSelects();
+  $('fPayer').value = bill?.payer ?? '';
+  if ($('fPayer').selectedIndex < 0) $('fPayer').append(el('option', { value: bill.payer, textContent: nameOf(bill.payer), selected: true }));
+  const forWhom = bill?.forWhom ?? '';
+  if (forWhom && !(state.household?.children || []).includes(forWhom)) $('fFor').append(el('option', { value: forWhom, textContent: forWhom }));
+  $('fFor').value = forWhom;
+  $('fMethod').value = bill?.method || 'przelew';
   $('fStart').value = bill?.start ?? period();
   $('fEnd').value = bill?.end ?? '';
   $('fNote').value = bill?.note ?? '';
@@ -519,6 +575,7 @@ async function saveBill(e) {
   }
   const { bill, error } = validateBill({
     name: $('fName').value, amount: $('fAmount').value, category: $('fCat').value, note: $('fNote').value, ...when,
+    payer: isCloud() ? $('fPayer').value : '', forWhom: $('fFor').value, method: $('fMethod').value,
   });
   if (error) return formError(error);
   if (state.formKind === 'once' && !bill.amount) return formError('Wpisz kwotę wydatku.');
@@ -567,7 +624,23 @@ function renderMenu() {
   if (h && !local) {
     $('members').textContent = '';
     for (const email of h.members || []) {
-      const li = el('li', {}, el('span', { textContent: email + (email === h.ownerEmail ? ' (założyciel)' : email === state.user?.email ? ' (Ty)' : '') }));
+      const label = el('span', {}, nameOf(email),
+        el('small', { textContent: email + (email === h.ownerEmail ? ' · założyciel' : email === state.user?.email ? ' · Ty' : '') }));
+      const li = el('li', {}, label);
+      const rename = el('button', { textContent: 'Imię' });
+      rename.onclick = () => {
+        const input = el('input', { value: nameOf(email), maxLength: 30, ariaLabel: `Imię dla ${email}` });
+        const ok = el('button', { className: 'primary', textContent: 'Zapisz' });
+        ok.onclick = async () => {
+          const v = input.value.trim();
+          if (!v) return;
+          try { await s.setMemberName(email, v); } catch (e) { console.error(e); memberError('Nie udało się zapisać imienia.'); }
+        };
+        input.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); ok.click(); } };
+        li.replaceChildren(input, ok);
+        input.focus();
+      };
+      li.append(rename);
       if (email !== h.ownerEmail && email !== state.user?.email) {
         const rm = el('button', { className: 'danger', textContent: 'Usuń' });
         rm.onclick = async () => {
@@ -579,6 +652,17 @@ function renderMenu() {
       }
       $('members').append(li);
     }
+  }
+  $('children').textContent = '';
+  const kids = h?.children || [];
+  if (!kids.length) $('children').append(el('li', { className: 'hint', textContent: 'Nie dodano jeszcze dzieci.' }));
+  for (const c of kids) {
+    const rm = el('button', { className: 'danger', textContent: 'Usuń' });
+    rm.onclick = async () => {
+      if (!rm.dataset.confirm) { rm.dataset.confirm = '1'; rm.textContent = 'Na pewno?'; return; }
+      try { await s.removeChild(c); } catch (e) { console.error(e); toast('Nie udało się usunąć.'); }
+    };
+    $('children').append(el('li', {}, el('span', { textContent: c }), rm));
   }
   const all = [...state.bills].sort((a, b) => a.name.localeCompare(b.name, 'pl'));
   $('allBills').textContent = '';
@@ -629,6 +713,20 @@ function bindEvents() {
   $('menuBtn').onclick = () => { renderMenu(); $('memberErr').hidden = true; $('menuSheet').hidden = false; };
   $('billForm').addEventListener('submit', saveBill);
   $('kindRecurring').onclick = () => setFormKind('recurring');
+  $('childForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = $('childName').value.trim().slice(0, 40);
+    if (!name) return;
+    try { await state.store.addChild(name); $('childName').value = ''; } catch (err) { console.error(err); toast('Nie udało się dodać.'); }
+  });
+  const setMine = (on) => {
+    state.mineOnly = on;
+    $('fltAll').setAttribute('aria-selected', String(!on));
+    $('fltMine').setAttribute('aria-selected', String(on));
+    render();
+  };
+  $('fltAll').onclick = () => setMine(false);
+  $('fltMine').onclick = () => setMine(true);
   $('kindOnce').onclick = () => setFormKind('once');
   $('payForm').addEventListener('submit', savePayment);
   $('unpayBtn').onclick = unpay;
@@ -761,18 +859,11 @@ function renderHistory() {
 
   // Kategorie
   const cats = categoryTotals(state.bills, state.historyPayments, periods);
-  const catBox = $('hCats');
-  catBox.textContent = '';
-  if (!cats.length) catBox.append(el('p', { className: 'hint', textContent: 'Brak zapłat w ostatnich 12 miesiącach.' }));
-  const maxCat = Math.max(...cats.map((c) => c.total), 1);
-  for (const c of cats) {
-    const track = el('div', { className: 'hbar' }, el('i', {}));
-    track.firstChild.style.width = `${(c.total / maxCat) * 100}%`;
-    catBox.append(el('div', { className: 'cat' },
-      el('div', { className: 'cat-head' }, el('span', { textContent: c.category }),
-        el('b', { textContent: `${formatPLN(c.total)}` }), el('small', { textContent: `${Math.round(c.share * 100)}%` })),
-      track));
-  }
+  barList($('hCats'), cats.map((c) => ({ label: c.category, total: c.total, share: c.share })));
+  const payers = totalsBy(state.bills, state.historyPayments, periods, (b, p) => p.payerEmail || '');
+  barList($('hPayers'), payers.map((c) => ({ label: c.key ? nameOf(c.key) : 'Nie wiadomo (stare wpisy)', total: c.total, share: c.share })));
+  const forWhom = totalsBy(state.bills, state.historyPayments, periods, (b) => b?.forWhom || 'Cała rodzina');
+  barList($('hFor'), forWhom.map((c) => ({ label: c.key, total: c.total, share: c.share })));
 
   // Każda płatność osobno
   const billBox = $('hBills');
@@ -799,7 +890,11 @@ function renderHistory() {
       }
       item.append(el('ul', { className: 'bh-list' }, ...h.list.map((x) => el('li', {},
         el('span', { textContent: monthLong(x.period) }),
-        el('span', { className: 'who', textContent: `${x.paidAt ? new Date(x.paidAt).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }) : ''}${x.paidByName ? ` · ${firstName(x.paidByName)}` : ''}` }),
+        el('span', { className: 'who', textContent: [
+          x.paidAt ? new Date(x.paidAt).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }) : '',
+          x.payerEmail ? nameOf(x.payerEmail) : firstName(x.paidByName || ''),
+          x.method === 'gotowka' ? 'gotówką' : '',
+        ].filter(Boolean).join(' · ') }),
         el('b', { textContent: formatPLN(x.amount) })))));
     }
     billBox.append(item);
@@ -887,4 +982,22 @@ function miniBars(periods, list) {
   });
   chart.append(svg('line', { x1: 0, x2: W, y1: H, y2: H, class: 'axis' }));
   return chart;
+}
+
+/** Lista poziomych słupków (jeden kolor): etykieta, kwota, udział. */
+function barList(box, rows) {
+  box.textContent = '';
+  if (!rows.length) {
+    box.append(el('p', { className: 'hint', textContent: 'Brak zapłat w ostatnich 12 miesiącach.' }));
+    return;
+  }
+  const max = Math.max(...rows.map((r) => r.total), 1);
+  for (const r of rows) {
+    const track = el('div', { className: 'hbar' }, el('i', {}));
+    track.firstChild.style.width = `${(r.total / max) * 100}%`;
+    box.append(el('div', { className: 'cat' },
+      el('div', { className: 'cat-head' }, el('span', { textContent: r.label }),
+        el('b', { textContent: formatPLN(r.total) }), el('small', { textContent: `${Math.round(r.share * 100)}%` })),
+      track));
+  }
 }

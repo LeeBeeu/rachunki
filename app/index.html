@@ -42,6 +42,14 @@
         <h2>Na co idą pieniądze <span class="opt">(12 mies.)</span></h2>
         <div id="hCats"></div>
       </section>
+      <section class="chart-card cloud-only">
+        <h2>Kto ile zapłacił <span class="opt">(12 mies.)</span></h2>
+        <div id="hPayers"></div>
+      </section>
+      <section class="chart-card">
+        <h2>Na kogo <span class="opt">(12 mies.)</span></h2>
+        <div id="hFor"></div>
+      </section>
       <section class="chart-card">
         <h2>Każda płatność osobno</h2>
         <p class="hint">Stuknij, aby zobaczyć historię zapłat.</p>
@@ -64,6 +72,10 @@
       </div>
       <div class="bar" role="progressbar" aria-label="Zapłacone pozycje" id="bar"><i id="progress"></i></div>
 
+      <div class="views small cloud-only" id="mineFilter" role="tablist" aria-label="Filtr">
+        <button type="button" id="fltAll" role="tab" aria-selected="true">Wszystkie</button>
+        <button type="button" id="fltMine" role="tab" aria-selected="false">Moje do zapłaty</button>
+      </div>
       <div id="overdue"></div>
       <div id="groups"></div>
     </section>
@@ -89,6 +101,11 @@
         <label class="recurring">Powtarza się<select id="fEvery"></select></label>
         <label>Kategoria<select id="fCat"></select></label>
       </div>
+      <div class="row">
+        <label>Dotyczy<select id="fFor"></select></label>
+        <label>Forma płatności<select id="fMethod"></select></label>
+      </div>
+      <label class="cloud-only">Kto płaci<select id="fPayer"></select></label>
       <div class="row recurring">
         <label>Od miesiąca<input id="fStart" type="month"></label>
         <label>Do miesiąca <span class="opt">(opcjonalnie)</span><input id="fEnd" type="month"></label>
@@ -112,6 +129,10 @@
       <div class="row">
         <label>Zapłacona kwota (zł)<input id="pAmount" inputmode="decimal" autocomplete="off"></label>
         <label>Data zapłaty<input id="pDate" type="date"></label>
+      </div>
+      <div class="row">
+        <label class="cloud-only">Kto zapłacił<select id="pPayer"></select></label>
+        <label>Forma<select id="pMethod"></select></label>
       </div>
       <p class="hint" id="payWho"></p>
       <p class="err" id="pErr" role="alert" hidden></p>
@@ -138,6 +159,16 @@
           <button class="primary" type="submit">Dodaj</button>
         </form>
         <p class="err" id="memberErr" role="alert" hidden></p>
+      </section>
+
+      <section class="block">
+        <h3>Dzieci</h3>
+        <p class="hint">Przy płatności możesz zaznaczyć, którego dziecka dotyczy (np. przedszkole, basen).</p>
+        <ul class="members" id="children"></ul>
+        <form id="childForm" class="inline">
+          <input id="childName" maxlength="40" placeholder="Imię dziecka" autocomplete="off" aria-label="Imię dziecka">
+          <button class="primary" type="submit">Dodaj</button>
+        </form>
       </section>
 
       <section class="block">

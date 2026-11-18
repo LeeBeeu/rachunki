@@ -10,7 +10,12 @@ stałych płatności: woda, prąd, czynsz, przedszkole, ubezpieczenia.
 - Stuknięcie kwoty pozwala wpisać, ile faktycznie zapłacono i kiedy (np. prąd wyszedł drożej niż zwykle).
   Płatność bez kwoty (np. prąd, gaz) ma kwotę zmienną: przy odhaczaniu aplikacja pyta, ile zapłacono.
 - **Jednorazowe wydatki** (naprawa, prezent, większe zakupy): przycisk **+ Dodaj → Jednorazowy wydatek**, z datą.
-- **Historia**: wykres zapłat z 12 miesięcy, podział na kategorie i historia każdej płatności (np. jak zmieniał się prąd).
+- **Kto płaci**: płatność można przypisać do konkretnej osoby (albo „Ktokolwiek”). Przy zapłacie zapisuje się,
+  kto faktycznie zapłacił. Filtr **Moje do zapłaty** pokazuje tylko Twoje pozycje.
+- **Dotyczy**: konkretne dziecko albo cała rodzina (lista dzieci w ☰ → Dzieci).
+- **Forma płatności**: przelew albo gotówka – domyślna przy płatności, faktyczna przy zapłacie.
+- **Historia**: wykres zapłat z 12 miesięcy, podział na kategorie, kto ile zapłacił, na kogo
+  (dzieci / cała rodzina) i historia każdej płatności (np. jak zmieniał się prąd).
 - Wszyscy domownicy widzą te same dane na żywo. Lista działa też bez internetu, a zmiany wysyłają się po odzyskaniu sieci.
 
 ## Publikacja

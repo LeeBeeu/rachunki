@@ -200,3 +200,13 @@ svg.mini { width: 100%; height: auto; display: block; }
 .table-view table { width: 100%; border-collapse: collapse; font-size: .85rem; font-variant-numeric: tabular-nums; }
 .table-view th, .table-view td { text-align: right; padding: 4px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 .table-view th:first-child, .table-view td:first-child { text-align: left; }
+
+/* Domownicy, dzieci, forma płatności */
+.local .cloud-only { display: none !important; }
+.chip { font-size: .72rem; font-weight: 600; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--fg); }
+.chip.who { border-color: var(--accent); color: var(--accent); }
+.views.small { margin: 0; }
+.views.small button { min-height: 32px; font-size: .88rem; }
+.members small { display: block; color: var(--muted); font-size: .78rem; }
+.members li input { flex: 1; min-height: 36px; padding: 6px 10px; }
+.members li > span:first-child { flex: 1; }

@@ -14,6 +14,33 @@ export const CATEGORIES = ['Media', 'Mieszkanie', 'Kredyt', 'Ubezpieczenie', 'Ab
 
 export const SOON_DAYS = 3;
 
+export const METHODS = [
+  { value: 'przelew', label: 'Przelew' },
+  { value: 'gotowka', label: 'Gotówka' },
+];
+
+export const methodLabel = (v) => METHODS.find((m) => m.value === v)?.label ?? '';
+
+/** Klucz imienia domownika w mapie household.names (Firestore nie lubi kropek w nazwach pól). */
+export function nameKey(email) {
+  return normalizeEmail(email).replace(/[^a-z0-9]/g, '_');
+}
+
+/** Imię do wyświetlenia: zapisane w domu → z konta → część adresu przed @. */
+export function displayName(email, names = {}, fallback = '') {
+  if (!email) return fallback;
+  const n = names[nameKey(email)];
+  if (n) return n;
+  return fallback || normalizeEmail(email).split('@')[0];
+}
+
+/** Tylko „moje” pozycje: przypisane do mnie albo do nikogo i jeszcze niezapłacone przez kogoś innego. */
+export function isMine(item, myEmail) {
+  const me = normalizeEmail(myEmail);
+  if (item.payment) return normalizeEmail(item.payment.payerEmail) === me;
+  return !item.bill.payer || normalizeEmail(item.bill.payer) === me;
+}
+
 /** 'RRRR-MM' dla roku i miesiąca 0–11. */
 export function periodKey(y, m) {
   return `${y}-${String(m + 1).padStart(2, '0')}`;
@@ -157,6 +184,9 @@ export function validateBill(input) {
       end,
       category: CATEGORIES.includes(input.category) ? input.category : 'Inne',
       note: String(input.note ?? '').trim().slice(0, 200),
+      payer: normalizeEmail(input.payer).slice(0, 120),
+      forWhom: String(input.forWhom ?? '').trim().slice(0, 40),
+      method: METHODS.some((m) => m.value === input.method) ? input.method : 'przelew',
     },
   };
 }
@@ -229,18 +259,24 @@ export function historyByMonth(bills, payments, periods) {
 
 /** Suma zapłat w kategoriach w podanych miesiącach, od największej. */
 export function categoryTotals(bills, payments, periods) {
+  return totalsBy(bills, payments, periods, (bill) => bill?.category || 'Inne')
+    .map(({ key, total, share }) => ({ category: key, total, share }));
+}
+
+/** Suma zapłat pogrupowana kluczem keyFn(bill, payment), od największej. */
+export function totalsBy(bills, payments, periods, keyFn) {
   const set = new Set(periods);
   const byId = new Map(bills.map((b) => [b.id, b]));
   const sums = new Map();
   for (const p of payments) {
     if (!set.has(p.period)) continue;
     const bill = byId.get(p.billId);
-    const cat = bill?.category || 'Inne';
-    sums.set(cat, (sums.get(cat) || 0) + paidAmount(p, bill));
+    const key = keyFn(bill, p);
+    sums.set(key, (sums.get(key) || 0) + paidAmount(p, bill));
   }
   const total = [...sums.values()].reduce((a, b) => a + b, 0);
   return [...sums.entries()]
-    .map(([category, sum]) => ({ category, total: round2(sum), share: total ? sum / total : 0 }))
+    .map(([key, sum]) => ({ key, total: round2(sum), share: total ? sum / total : 0 }))
     .filter((c) => c.total > 0)
     .sort((a, b) => b.total - a.total);
 }
@@ -249,7 +285,9 @@ export function categoryTotals(bills, payments, periods) {
 export function billHistory(bill, payments) {
   const list = payments
     .filter((p) => p.billId === bill.id)
-    .map((p) => ({ period: p.period, amount: paidAmount(p, bill), paidAt: p.paidAt, paidByName: p.paidByName || '' }))
+    .map((p) => ({
+      period: p.period, amount: paidAmount(p, bill), paidAt: p.paidAt, paidByName: p.paidByName || '', payerEmail: p.payerEmail || '', method: p.method || '',
+    }))
     .sort((a, b) => b.period.localeCompare(a.period));
   const amounts = list.map((x) => x.amount);
   return {

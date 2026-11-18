@@ -8,7 +8,7 @@
 //   households/{hid}/payments/{billId_RRRR-MM}  { billId, period, amount, paidAt, paidBy, paidByName }
 
 import { firebaseConfig } from './firebase-config.js';
-import { normalizeEmail, paymentId } from './calc.js';
+import { normalizeEmail, paymentId, nameKey } from './calc.js';
 
 const FB = 'https://www.gstatic.com/firebasejs/10.12.2';
 
@@ -26,7 +26,10 @@ function createLocalStore() {
   const KEY = 'rachunki-local-v1';
   const listeners = new Set();
   const load = () => {
-    try { return JSON.parse(localStorage.getItem(KEY)) || { bills: {}, payments: {} }; } catch { return { bills: {}, payments: {} }; }
+    let d;
+    try { d = JSON.parse(localStorage.getItem(KEY)); } catch { d = null; }
+    d = d || {};
+    return { bills: d.bills || {}, payments: d.payments || {}, household: { names: {}, children: [], ...(d.household || {}) } };
   };
   let data = load();
   const save = () => {
@@ -45,7 +48,12 @@ function createLocalStore() {
     async signOut() {},
     async findHousehold() { return { id: 'local', name: 'Na tym urządzeniu', members: [], owner: 'local' }; },
     async createHousehold() { return this.findHousehold(); },
-    watchHousehold(cb) { cb({ id: 'local', name: 'Na tym urządzeniu', members: [], owner: 'local' }); return () => {}; },
+    watchHousehold(cb) {
+      return subscribe(() => cb({ id: 'local', name: 'Na tym urządzeniu', members: [], owner: 'local', ...data.household }));
+    },
+    async setMemberName() {},
+    async addChild(name) { if (!data.household.children.includes(name)) data.household.children.push(name); save(); },
+    async removeChild(name) { data.household.children = data.household.children.filter((c) => c !== name); save(); },
     watchBills(cb) {
       return subscribe(() => cb(Object.entries(data.bills).map(([bid, b]) => ({ id: bid, ...b }))));
     },
@@ -65,7 +73,8 @@ function createLocalStore() {
     },
     async markPaid(bill, period, extra = {}) {
       data.payments[paymentId(bill.id, period)] = {
-        billId: bill.id, period, amount: bill.amount || 0, paidAt: new Date().toISOString(), paidBy: me.uid, paidByName: me.name, ...extra,
+        billId: bill.id, period, amount: bill.amount || 0, paidAt: new Date().toISOString(), paidBy: me.uid, paidByName: me.name,
+        payerEmail: '', method: bill.method || 'przelew', ...extra,
       };
       save();
     },
@@ -195,7 +204,8 @@ async function createCloudStore() {
     },
     async markPaid(bill, period, extra = {}) {
       await fs.setDoc(fs.doc(col('payments'), paymentId(bill.id, period)), {
-        billId: bill.id, period, amount: bill.amount || 0, paidAt: new Date().toISOString(), paidBy: user.uid, paidByName: user.name, ...extra,
+        billId: bill.id, period, amount: bill.amount || 0, paidAt: new Date().toISOString(), paidBy: user.uid, paidByName: user.name,
+        payerEmail: user.email, method: bill.method || 'przelew', ...extra,
       });
     },
     async updatePayment(billId, period, fields) {
@@ -205,5 +215,8 @@ async function createCloudStore() {
     async addMember(email) { await fs.updateDoc(hh(), { members: fs.arrayUnion(normalizeEmail(email)) }); },
     async removeMember(email) { await fs.updateDoc(hh(), { members: fs.arrayRemove(normalizeEmail(email)) }); },
     async renameHousehold(name) { await fs.updateDoc(hh(), { name }); },
+    async setMemberName(email, name) { await fs.updateDoc(hh(), { [`names.${nameKey(email)}`]: name }); },
+    async addChild(name) { await fs.updateDoc(hh(), { children: fs.arrayUnion(name) }); },
+    async removeChild(name) { await fs.updateDoc(hh(), { children: fs.arrayRemove(name) }); },
   };
 }
