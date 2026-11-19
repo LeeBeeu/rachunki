@@ -103,21 +103,33 @@ export function monthItems(bills, payments, period, today) {
     .sort((a, b) => a.due - b.due || a.bill.name.localeCompare(b.bill.name, 'pl'));
 }
 
+/**
+ * Podsumowanie miesiąca:
+ *  due  – do zapłaty: niezapłacone pozycje ze znaną kwotą (kwota zmienna liczy się jako 0, dopóki jej nie podasz),
+ *  paid – faktycznie zapłacone kwoty,
+ *  total – razem (zapłacone + do zapłaty),
+ *  variableDue – ile niezapłaconych pozycji ma kwotę zmienną.
+ */
 export function summary(items) {
-  let total = 0;
+  let due = 0;
   let paid = 0;
   let paidCount = 0;
+  let variableDue = 0;
   for (const i of items) {
-    total += Number(i.bill.amount) || 0;
     if (i.payment) {
-      paid += Number(i.payment.amount ?? i.bill.amount) || 0;
+      paid += paidAmount(i.payment, i.bill);
       paidCount += 1;
+    } else if (Number(i.bill.amount)) {
+      due += Number(i.bill.amount);
+    } else {
+      variableDue += 1;
     }
   }
   return {
-    total: round2(total),
+    due: round2(due),
     paid: round2(paid),
-    left: round2(Math.max(0, total - paid)),
+    total: round2(due + paid),
+    variableDue,
     count: items.length,
     paidCount,
     lateCount: items.filter((i) => i.status === 'late').length,

@@ -58,7 +58,21 @@ test('pozycje miesiąca i podsumowanie', () => {
   ];
   const items = monthItems(bills, { p: { amount: 210 } }, '2026-11', today);
   assert.deepEqual(items.map((i) => [i.bill.id, i.status]), [['w', 'late'], ['p', 'paid'], ['c', 'todo']]);
-  assert.deepEqual(summary(items), { total: 1150.5, paid: 210, left: 940.5, count: 3, paidCount: 1, lateCount: 1 });
+  assert.deepEqual(summary(items), { due: 950, paid: 210, total: 1160, variableDue: 0, count: 3, paidCount: 1, lateCount: 1 });
+});
+
+test('podsumowanie: kwota zmienna liczy się dopiero po podaniu (sytuacja ze zgłoszenia)', () => {
+  const today = new Date(2026, 10, 19);
+  const bills = [
+    bill({ id: 'a', name: 'Angielski', amount: 0, day: 10 }),
+    bill({ id: 'k', name: 'Korepetycje', amount: 0, day: 10 }),
+    bill({ id: 's', name: 'Śmieci', amount: 140, day: 25 }),
+    bill({ id: 'p', name: 'Prąd', amount: 0, day: 5 }),
+    bill({ id: 'c', name: 'Czynsz', amount: 780, day: 5 }),
+  ];
+  const pays = { p: { amount: 312.4 }, c: { amount: 780 } };
+  const sum = summary(monthItems(bills, pays, '2026-11', today));
+  assert.deepEqual([sum.due, sum.paid, sum.total, sum.variableDue], [140, 1092.4, 1232.4, 2]);
 });
 
 test('zaległe z poprzednich miesięcy', () => {

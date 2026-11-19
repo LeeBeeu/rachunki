@@ -246,3 +246,4 @@ svg.mini { width: 100%; height: auto; display: block; }
 .clear-options { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
 .radio { flex-direction: row; align-items: flex-start; gap: 8px; font-weight: 600; color: var(--fg); font-size: .9rem; }
 .radio input { width: auto; min-height: 0; margin-top: 3px; accent-color: var(--late); }
+.summary .sub { display: block; font-size: .72rem; color: var(--muted); margin-top: 2px; }

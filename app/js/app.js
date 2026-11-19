@@ -316,9 +316,11 @@ function render() {
   for (const pay of Object.values(state.payments)) if (pay.period === p) forMonth[pay.billId] = pay;
   const items = monthItems(state.bills, forMonth, p, now());
   const sum = summary(items);
-  $('sTotal').textContent = formatPLN(sum.total);
+  $('sDue').textContent = formatPLN(sum.due);
+  $('sVar').textContent = `+ ${sum.variableDue} bez kwoty`;
+  $('sVar').hidden = !sum.variableDue;
   $('sPaid').textContent = formatPLN(sum.paid);
-  $('sLeft').textContent = formatPLN(sum.left);
+  $('sTotal').textContent = formatPLN(sum.total);
   $('progress').style.width = `${sum.count ? (sum.paidCount / sum.count) * 100 : 0}%`;
   $('bar').setAttribute('aria-valuenow', String(sum.paidCount));
   $('bar').setAttribute('aria-valuemax', String(sum.count));
